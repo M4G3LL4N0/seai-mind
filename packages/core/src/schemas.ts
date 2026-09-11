@@ -501,6 +501,15 @@ export const EvolutionCandidateSchema = z.object({
   changes: z.record(z.unknown()),
   generatedBy: z.string(),
   generatedAt: z.string().datetime(),
+  // Lineage: which genome this candidate was generated from. Required for
+  // real promotion (was missing: the old serializer wrote candidate.id as
+  // genome_id, breaking candidate↔genome linkage).
+  genomeId: z.string().uuid().optional(),
+  // Why this candidate exists, in human terms.
+  reason: z.string().max(2048).optional(),
+  // The measured evidence that motivated it (task ids, failure counts,
+  // baseline metrics). Candidates without evidence cannot be promoted.
+  evidence: z.record(z.unknown()).optional(),
   status: z.enum([
     "proposed",
     "sandboxed",
@@ -510,6 +519,8 @@ export const EvolutionCandidateSchema = z.object({
     "privacy-reviewed",
     "cost-reviewed",
     "compared",
+    "eligible",
+    "held",
     "promoted",
     "rejected",
     "rolled-back",
@@ -563,6 +574,10 @@ export const GenomeSchema = z.object({
     version: VersionSchema,
   })).optional(),
   prompts: z.record(z.string()).optional(),
+  // Versioned cognitive configuration (e.g. deterministic response format).
+  // Optional so pre-existing genomes parse unchanged; the evolution loop
+  // records every promoted config change here.
+  cognitionConfig: z.record(z.unknown()).optional(),
   memoryConfig: z.record(z.unknown()).optional(),
   memorySnapshots: z.array(z.string().uuid()).optional(),
   skills: z.array(z.string().uuid()),
@@ -573,7 +588,10 @@ export const GenomeSchema = z.object({
   knowledge: z.array(z.string().uuid()).optional(),
   benchmarkResults: z.record(z.unknown()).optional(),
   evolutionHistory: z.array(z.object({
-    candidateId: z.string().uuid(),
+    // Absent for rollback events, which revert to a prior genome rather
+    // than promoting a candidate. (Previously rollback wrote "", which
+    // fails uuid validation — a real bug exposed by executing rollback.)
+    candidateId: z.string().uuid().optional(),
     action: z.enum(["promoted", "rejected", "rolled-back"]),
     timestamp: z.string().datetime(),
     reason: z.string().optional(),

@@ -21,7 +21,7 @@ import {
 } from "@seai/core";
 import { generateId, nowISO, Result } from "@seai/core";
 import { createTelemetry, EventTypes, type Telemetry } from "@seai/core";
-import { StorageAdapter, createRepository, storage } from "@seai/core";
+import { StorageAdapter, createRepository, createStorage, storage } from "@seai/core";
 import { SecurityEngine, type SecurityContext } from "@seai/core";
 import { PolicyEngine, type PolicyContext } from "@seai/core";
 import { MemoryEngine, type MemoryConfig } from "@seai/state";
@@ -36,6 +36,29 @@ import { EvolutionEngine, type EvolutionConfig } from "./evolution.js";
 import { GenomeEngine, type GenomeConfig } from "@seai/state";
 import { BenchmarkEngine, type BenchmarkConfig } from "./benchmark.js";
 import { HardwareDetector, type HardwareProfile as DetectedHardwareProfile, detectHardware } from "@seai/core";
+import {
+  ARITHMETIC_FORMAT_SUITE_V1,
+  applyPromotion,
+  compareArms,
+  decideGate,
+  formatComplianceCriterion,
+  measureArm,
+  proposeFormatComplianceCandidate,
+  isCurrentlyPromoted,
+  summarizeEmptyArm,
+  appendExperimentRecord,
+  defaultStorePaths,
+  getActiveGenome,
+  loadGenomeSnapshot,
+  readExperimentHistory,
+  setActiveGenome,
+  storeGenomeSnapshot,
+  updateExperimentRecord,
+  type ExperimentRecord,
+  type ExperimentStorePaths,
+  type ExperimentSuite,
+} from "./experiment.js";
+import type { EvolutionCandidate } from "@seai/core";
 
 export interface MindConfig {
   identity: Identity;
@@ -309,50 +332,353 @@ export class MindRuntime {
     return this.compiler.compile(goal, this.taskContext);
   }
 
-  async evolve(weakness: string): Promise<Result<any, Error>> {
+  // Runs the REAL evolution experiment (baseline vs candidate on identical
+  // tasks, measured evidence, explicit gate). The legacy simulated path is
+  // retired: this method executes, measures, and records — never fabricates.
+  // The weakness string is recorded as the motivating observation.
+  async evolve(weakness: string, opts?: { storeBaseDir?: string }): Promise<Result<any, Error>> {
     if (!this.taskContext) {
       return Result.err(new Error("Mind not initialized"));
     }
 
-    const latestGenome = await this.genomeEngine.getLatestGenome(this.config.identity.id);
-    if (!latestGenome) {
-      return Result.err(new Error("No genome found for evolution"));
+    const result = await this.runExperiment(ARITHMETIC_FORMAT_SUITE_V1, opts);
+    if (!result.ok) return result;
+
+    const record = result.value;
+    return Result.ok({
+      experimentId: record.id,
+      suite: record.suiteId,
+      observation: weakness,
+      baselineQuality: record.baseline.qualityRate,
+      candidateQuality: record.candidateResult.qualityRate,
+      decision: record.gate.decision,
+      reasons: record.gate.reasons,
+    });
+  }
+
+  // Full experiment lifecycle for one suite. Never auto-promotes: promotion
+  // requires an explicit promoteExperiment() call (AUTO-PROMOTE = FALSE).
+  async runExperiment(
+    suite: ExperimentSuite = ARITHMETIC_FORMAT_SUITE_V1,
+    opts?: { storeBaseDir?: string }
+  ): Promise<Result<ExperimentRecord, Error>> {
+    if (!this.taskContext) {
+      return Result.err(new Error("Mind not initialized"));
     }
 
-    const context = {
-      genomeId: latestGenome.id,
+    const startedAt = nowISO();
+    const paths = defaultStorePaths(this.config.identity.name, opts?.storeBaseDir);
+    this.telemetry.emitEvent(EventTypes.EVOLUTION_STARTED, "mind-runtime", {
       mindId: this.config.identity.id,
-      weakness,
-      currentPerformance: (latestGenome.benchmarkResults || {}) as Record<string, number>,
-      hardwareProfile: this.config.hardware,
-      availableModels: await this.runtimeManager.getModelRegistry().list(),
-    };
+      suite: suite.id,
+      tasks: suite.tasks.length,
+    });
 
-    const candidates = await this.evolutionEngine.generateCandidates(context);
-    
-    for (const candidate of candidates) {
-      await this.evolutionEngine.sandboxCandidate(candidate, latestGenome);
-      await this.evolutionEngine.runRegressionTests(candidate, latestGenome);
-      
-      if (this.config.evolution.requireSecurityReview) {
-        await this.evolutionEngine.securityReview(candidate, "auto");
+    try {
+      const parent = await this.ensureBaselineGenome();
+
+      // BASELINE arm: live cognition config, isolated sandbox storage.
+      const baselineSandbox = this.spawnSandbox(this.cognitionEngine.getConfig());
+      const baseline = await measureArm(
+        {
+          telemetry: this.telemetry,
+          cognition: baselineSandbox.cognition,
+          mindId: this.config.identity.id,
+          taskContext: baselineSandbox.taskContext,
+        },
+        suite.tasks,
+        formatComplianceCriterion
+      );
+
+      // CANDIDATE from measured evidence (null when nothing failed).
+      const candidate = proposeFormatComplianceCandidate({
+        mindId: this.config.identity.id,
+        genomeId: parent.id,
+        suiteId: suite.id,
+        baseline,
+      });
+
+      let candidateResult = summarizeEmptyArm();
+      if (candidate) {
+        const candidateSandbox = this.spawnSandbox({
+          ...this.cognitionEngine.getConfig(),
+          ...((candidate.changes.cognitionConfig ?? {}) as Partial<CognitionConfig>),
+        });
+        candidateResult = await measureArm(
+          {
+            telemetry: this.telemetry,
+            cognition: candidateSandbox.cognition,
+            mindId: this.config.identity.id,
+            taskContext: candidateSandbox.taskContext,
+          },
+          suite.tasks,
+          formatComplianceCriterion
+        );
       }
-      if (this.config.evolution.requirePrivacyReview) {
-        await this.evolutionEngine.privacyReview(candidate, "auto");
+
+      const deltas = compareArms(baseline, candidateResult);
+      const gate = candidate
+        ? decideGate({
+            baseline,
+            candidate: candidateResult,
+            deltas,
+            candidateChanges: candidate.changes as Record<string, unknown>,
+            thresholds: { minQualityImprovement: this.config.evolution.minImprovementThreshold },
+          })
+        : {
+            decision: "hold" as const,
+            reasons: ["HOLD: baseline arm revealed no failures, so no candidate was proposed"],
+            checks: [],
+          };
+
+      const record: ExperimentRecord = {
+        id: generateId(),
+        mindId: this.config.identity.id,
+        suiteId: suite.id,
+        startedAt,
+        completedAt: nowISO(),
+        parentGenomeId: parent.id,
+        parentVersion: parent.version,
+        candidate,
+        baseline,
+        candidateResult,
+        deltas,
+        gate,
+        promotion: null,
+        rollback: null,
+        lineage: [...(parent.lineage ?? []), parent.id],
+      };
+
+      await storeGenomeSnapshot(paths, parent);
+      await appendExperimentRecord(paths, record);
+      this.telemetry.emitEvent(EventTypes.EVOLUTION_CANDIDATE_EVALUATED, "mind-runtime", {
+        mindId: this.config.identity.id,
+        experimentId: record.id,
+        suite: suite.id,
+        baselineQuality: baseline.qualityRate,
+        candidateQuality: candidateResult.qualityRate,
+        decision: gate.decision,
+      });
+
+      return Result.ok(record);
+    } catch (error) {
+      return Result.err(error instanceof Error ? error : new Error(String(error)));
+    }
+  }
+
+  // Explicit promotion: ELIGIBLE record → new genome version → live adoption.
+  // Throws unless the gate decision is eligible and no promotion happened yet.
+  async promoteExperiment(experimentId: string, opts?: { storeBaseDir?: string }): Promise<Result<Genome, Error>> {
+    if (!this.taskContext) {
+      return Result.err(new Error("Mind not initialized"));
+    }
+
+    try {
+      const paths = defaultStorePaths(this.config.identity.name, opts?.storeBaseDir);
+      const history = await readExperimentHistory(paths);
+      const record = history.find((r) => r.id === experimentId);
+      if (!record) return Result.err(new Error(`Experiment not found: ${experimentId}`));
+      if (record.gate.decision !== "eligible") {
+        return Result.err(new Error(`Experiment ${experimentId} is not eligible (decision: ${record.gate.decision})`));
       }
-      if (this.config.evolution.requireCostReview) {
-        await this.evolutionEngine.costReview(candidate, "auto");
+      if (isCurrentlyPromoted(record)) {
+        return Result.err(new Error(`Experiment ${experimentId} already promoted (roll back first to re-promote)`));
       }
-      
-      const comparison = await this.evolutionEngine.compareCandidate(candidate, latestGenome);
-      if (comparison.better) {
-        if (this.config.evolution.autoPromote) {
-          await this.evolutionEngine.promoteCandidate(candidate.id, latestGenome.id);
+      if (!record.candidate) return Result.err(new Error(`Experiment ${experimentId} produced no candidate`));
+
+      const parent = await loadGenomeSnapshot(paths, record.parentGenomeId);
+      if (!parent) return Result.err(new Error(`Parent genome snapshot missing: ${record.parentGenomeId}`));
+
+      const genome = applyPromotion(parent, record.candidate);
+      const sysCtx = this.systemGenomeContext();
+      const put = await this.genomeEngine.putGenome(genome, sysCtx);
+      if (!put.ok) return put;
+      this.applyGenome(put.value);
+
+      await storeGenomeSnapshot(paths, put.value);
+      const updated: ExperimentRecord = {
+        ...record,
+        promotion: {
+          promotedGenomeId: put.value.id,
+          promotedVersion: put.value.version,
+          promotedAt: nowISO(),
+        },
+        lineage: [...record.lineage, put.value.id],
+      };
+      await updateExperimentRecord(paths, updated);
+      await setActiveGenome(paths, {
+        genomeId: put.value.id,
+        version: put.value.version,
+        experimentId: record.id,
+        updatedAt: nowISO(),
+      });
+      this.telemetry.emitEvent(EventTypes.EVOLUTION_PROMOTED, "mind-runtime", {
+        mindId: this.config.identity.id,
+        experimentId: record.id,
+        genomeId: put.value.id,
+      });
+
+      return Result.ok(put.value);
+    } catch (error) {
+      return Result.err(error instanceof Error ? error : new Error(String(error)));
+    }
+  }
+
+  // Real rollback through the genome engine's lineage traversal, then live
+  // re-adoption of the restored version. Lineage history is preserved.
+  async rollbackExperiment(reason: string, opts?: { storeBaseDir?: string }): Promise<Result<Genome, Error>> {
+    if (!this.taskContext) {
+      return Result.err(new Error("Mind not initialized"));
+    }
+
+    try {
+      const paths = defaultStorePaths(this.config.identity.name, opts?.storeBaseDir);
+      const active = await getActiveGenome(paths);
+      if (!active) return Result.err(new Error("No active genome to roll back from"));
+
+      // Rehydrate the chain into the live repository so the engine's real
+      // lineage-traversal rollback operates on genuine records.
+      const activeGenome = await loadGenomeSnapshot(paths, active.genomeId);
+      if (!activeGenome) return Result.err(new Error(`Active genome snapshot missing: ${active.genomeId}`));
+      const sysCtx = this.systemGenomeContext();
+      const putActive = await this.genomeEngine.putGenome(activeGenome, sysCtx);
+      if (!putActive.ok) return putActive;
+
+      const parentId = activeGenome.parentGenome;
+      if (!parentId) return Result.err(new Error("Active genome has no parent; nothing to roll back to"));
+      const parent = await loadGenomeSnapshot(paths, parentId);
+      if (!parent) return Result.err(new Error(`Parent genome snapshot missing: ${parentId}`));
+      const putParent = await this.genomeEngine.putGenome(parent, sysCtx);
+      if (!putParent.ok) return putParent;
+
+      const rolled = await this.genomeEngine.rollbackGenome(activeGenome.id, parent.version, sysCtx);
+      if (!rolled.ok) return rolled;
+      this.applyGenome(rolled.value);
+
+      await storeGenomeSnapshot(paths, rolled.value);
+      await setActiveGenome(paths, {
+        genomeId: rolled.value.id,
+        version: rolled.value.version,
+        experimentId: active.experimentId,
+        updatedAt: nowISO(),
+      });
+      if (active.experimentId) {
+        const history = await readExperimentHistory(paths);
+        const record = history.find((r) => r.id === active.experimentId);
+        if (record) {
+          await updateExperimentRecord(paths, {
+            ...record,
+            rollback: {
+              rolledBackGenomeId: rolled.value.id,
+              rolledBackVersion: rolled.value.version,
+              restoredGenomeId: parent.id,
+              rolledBackAt: nowISO(),
+              reason,
+            },
+            lineage: [...record.lineage, rolled.value.id],
+          });
         }
       }
-    }
+      this.telemetry.emitEvent(EventTypes.EVOLUTION_ROLLBACK, "mind-runtime", {
+        mindId: this.config.identity.id,
+        genomeId: rolled.value.id,
+        reason,
+      });
 
-    return Result.ok({ candidates: candidates.length, promoted: 0 });
+      return Result.ok(rolled.value);
+    } catch (error) {
+      return Result.err(error instanceof Error ? error : new Error(String(error)));
+    }
+  }
+
+  // Durable evolution history (file store — survives process restarts).
+  async getEvolutionHistory(opts?: { storeBaseDir?: string }): Promise<ExperimentRecord[]> {
+    const paths = defaultStorePaths(this.config.identity.name, opts?.storeBaseDir);
+    return readExperimentHistory(paths);
+  }
+
+  // Switches live execution to a genome's cognitive configuration.
+  // Unknown/absent config resets to the deterministic default (raw).
+  applyGenome(genome: Genome): void {
+    const raw = genome.cognitionConfig?.deterministicFormat;
+    const deterministicFormat = raw === "json" ? "json" : "raw";
+    this.cognitionEngine.updateConfig({ deterministicFormat });
+  }
+
+  // Ensures a baseline genome exists (gen-0 snapshots live cognition config).
+  private async ensureBaselineGenome(): Promise<Genome> {
+    const mindId = this.config.identity.id;
+    const latest = await this.genomeEngine.getLatestGenome(mindId);
+    if (latest) return latest;
+
+    const now = nowISO();
+    const gen0: Genome = {
+      id: generateId(),
+      mindId,
+      version: { major: 0, minor: 1, patch: 0 },
+      baseModels: [],
+      skills: [],
+      tools: [],
+      policies: [],
+      routing: [],
+      evaluators: [],
+      cognitionConfig: { ...this.cognitionEngine.getConfig() },
+      createdAt: now,
+      updatedAt: now,
+      lineage: [],
+      evolutionHistory: [],
+    };
+    const put = await this.genomeEngine.putGenome(gen0, this.systemGenomeContext());
+    if (!put.ok) throw put.error;
+    return put.value;
+  }
+
+  // Genome operations act on the Mind's own genome at confidential level.
+  private systemGenomeContext(): SecurityContext {
+    const base = this.taskContext?.securityContext;
+    return {
+      userId: "system",
+      sessionId: generateId(),
+      permissions: base?.permissions ?? [],
+      privacyLevel: "confidential",
+      securityLevel: base?.securityLevel ?? "medium",
+    } as SecurityContext;
+  }
+
+  // Builds an isolated sandbox: fresh storage-backed engines sharing only
+  // stateless services. Production memory is untouched by construction.
+  private spawnSandbox(cognitionConfig: Partial<CognitionConfig>): {
+    cognition: CognitionEngine;
+    taskContext: TaskContext;
+  } {
+    const sandboxStorage = createStorage();
+    const telemetry = this.telemetry;
+    const security = this.securityEngine;
+    const memory = new MemoryEngine(this.config.memory, telemetry, sandboxStorage, security);
+    const skills = new SkillEngine(this.config.skills, telemetry, sandboxStorage, security);
+    const tools = new ToolEngine(this.config.tools, telemetry, sandboxStorage, security);
+    const routing = new RoutingEngine(telemetry, security, this.policyEngine);
+    const cognition = new CognitionEngine(
+      { ...this.cognitionEngine.getConfig(), ...cognitionConfig },
+      telemetry,
+      memory,
+      skills,
+      tools,
+      routing,
+      this.runtimeManager,
+      security,
+      this.policyEngine
+    );
+    const live = this.taskContext as TaskContext;
+    return {
+      cognition,
+      taskContext: {
+        ...live,
+        securityContext: { ...live.securityContext },
+        availableModels: [],
+        availableProviders: [],
+      },
+    };
   }
 
   async benchmark(experimentName: string): Promise<Result<any, Error>> {

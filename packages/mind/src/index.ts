@@ -4,3 +4,4 @@ export * from "./compiler.js";
 export * from "./evaluation.js";
 export * from "./evolution.js";
 export * from "./benchmark.js";
+export * from "./experiment.js";

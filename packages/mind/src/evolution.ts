@@ -6,7 +6,7 @@ import {
   type EvolutionLayer,
   type Genome,
 } from "@seai/core";
-import { generateId, nowISO, Result } from "@seai/core";
+import { generateId, nowISO, Result, detectThreats } from "@seai/core";
 import { createTelemetry, EventTypes, type Telemetry } from "@seai/core";
 import { StorageAdapter, createRepository } from "@seai/core";
 import { SecurityEngine, type SecurityContext } from "@seai/core";
@@ -212,24 +212,26 @@ export class EvolutionEngine {
     });
     
     try {
-      // In reality, this would run in an isolated environment
-      // For now, simulate sandbox execution
-      const metrics = await this.runSandboxSimulation(candidate, genome);
-      
+      // The legacy Math.random simulation was DELETED. Real sandboxed
+      // execution lives in the experiment runner (mind/src/experiment.ts),
+      // which the engine cannot reach (it owns no cognition/memory engines
+      // to execute tasks with). This shim therefore refuses to fabricate
+      // metrics and holds the candidate instead.
       const result: SandboxResult = {
         candidateId: candidate.id,
-        success: true,
-        metrics,
-        logs: [`Sandbox completed for ${candidate.layer}`],
+        success: false,
+        error: "Legacy sandbox retired: attach an executable suite and run it via runExperiment().",
+        metrics: {},
+        logs: [`Sandbox refused for ${candidate.layer}: held, not simulated`],
       };
-      
-      await this.candidateRepository.update({ ...candidate, status: "benchmarked", benchmarkResults: metrics });
-      
-      this.telemetry.emitEvent(EventTypes.EVOLUTION_CANDIDATE_EVALUATED, "evolution-engine", { 
-        candidateId: candidate.id, 
-        success: true 
+      await this.candidateRepository.update({ ...candidate, status: "held" });
+
+      this.telemetry.emitEvent(EventTypes.EVOLUTION_CANDIDATE_EVALUATED, "evolution-engine", {
+        candidateId: candidate.id,
+        success: false,
+        held: true,
       });
-      
+
       return result;
     } catch (error) {
       const result: SandboxResult = {
@@ -246,19 +248,6 @@ export class EvolutionEngine {
     } finally {
       this.activeCandidates.delete(candidate.id);
     }
-  }
-
-  private async runSandboxSimulation(candidate: EvolutionCandidate, genome: Genome): Promise<Record<string, number>> {
-    // Simulate running the candidate in a sandbox
-    // In reality, this would apply the candidate's changes and run benchmarks
-    await new Promise(resolve => setTimeout(resolve, 100));
-    
-    return {
-      taskSuccess: Math.random() * 0.2 + 0.7,
-      accuracy: Math.random() * 0.2 + 0.7,
-      latency: Math.random() * 1000 + 500,
-      cost: Math.random() * 0.01,
-    };
   }
 
   async runRegressionTests(candidate: EvolutionCandidate, baselineGenome: Genome): Promise<RegressionTestResult> {
@@ -284,30 +273,43 @@ export class EvolutionEngine {
 
   async securityReview(candidate: EvolutionCandidate, reviewer: string): Promise<{ passed: boolean; notes?: string }> {
     await this.candidateRepository.update({ ...candidate, status: "security-reviewed" });
-    
-    // Would integrate with security engine
-    const passed = true; // Simplified
-    
+
+    // REAL: scan the candidate's serialized changes against threat signatures.
+    // A candidate smuggling prompt-injection / exfiltration patterns fails.
+    const scan = detectThreats(JSON.stringify(candidate.changes ?? {}));
+    const passed = !scan.detected;
+    const notes = passed
+      ? "No threat signatures in candidate changes"
+      : `Threat signatures detected: ${scan.threats.map((t) => t.signature.name).join(", ")}`;
+
     await this.candidateRepository.update({
       ...candidate,
-      securityReview: { passed, reviewer, timestamp: nowISO(), notes: passed ? "Approved" : "Rejected" },
+      securityReview: { passed, reviewer, timestamp: nowISO(), notes },
     });
-    
-    return { passed, notes: passed ? "Security review passed" : "Security concerns found" };
+
+    return { passed, notes };
   }
 
   async privacyReview(candidate: EvolutionCandidate, reviewer: string): Promise<{ passed: boolean; notes?: string }> {
     await this.candidateRepository.update({ ...candidate, status: "privacy-reviewed" });
-    
-    // Would integrate with privacy gate
-    const passed = true; // Simplified
-    
+
+    // REAL (narrow): candidates touching privacy-gated configuration paths
+    // (memory, policies, security) fail and require explicit human review.
+    // Data-only changes (cognition format, prompts, routing) pass.
+    const gated = ["memory", "policies", "security", "privacy"];
+    const touched = Object.keys((candidate.changes ?? {}) as Record<string, unknown>);
+    const violations = touched.filter((k) => gated.some((g) => k.toLowerCase().includes(g)));
+    const passed = violations.length === 0;
+    const notes = passed
+      ? "Candidate touches no privacy-gated configuration"
+      : `Candidate touches privacy-gated paths: ${violations.join(", ")}`;
+
     await this.candidateRepository.update({
       ...candidate,
-      privacyReview: { passed, reviewer, timestamp: nowISO(), notes: passed ? "Approved" : "Rejected" },
+      privacyReview: { passed, reviewer, timestamp: nowISO(), notes },
     });
-    
-    return { passed, notes: passed ? "Privacy review passed" : "Privacy concerns found" };
+
+    return { passed, notes };
   }
 
   async costReview(candidate: EvolutionCandidate, reviewer: string): Promise<{ passed: boolean; deltaCost?: number; notes?: string }> {
@@ -413,9 +415,15 @@ export class EvolutionEngine {
     const changes = candidate.changes as Record<string, unknown>;
     
     switch (candidate.layer) {
-      case "configuration":
-        // Update configuration
+      case "configuration": {
+        // Versioned cognitive configuration (data, not code). Only
+        // allowlisted cognition keys may change — see reviewCandidate().
+        const cognition = changes.cognitionConfig as Record<string, unknown> | undefined;
+        if (cognition && typeof cognition === "object") {
+          newGenome.cognitionConfig = { ...(genome.cognitionConfig ?? {}), ...cognition };
+        }
         break;
+      }
       case "prompts":
         newGenome.prompts = { ...genome.prompts, ...(changes.prompts as Record<string, string> || {}) };
         break;
@@ -461,12 +469,14 @@ export class EvolutionEngine {
   private serializeCandidate(candidate: EvolutionCandidate): Record<string, unknown> {
     return {
       id: candidate.id,
-      genome_id: candidate.id, // Would be actual genome_id
+      genome_id: candidate.genomeId ?? null,
       layer: candidate.layer,
       description: candidate.description,
       changes: JSON.stringify(candidate.changes),
       generated_by: candidate.generatedBy,
       generated_at: candidate.generatedAt,
+      reason: candidate.reason ?? null,
+      evidence: candidate.evidence ? JSON.stringify(candidate.evidence) : null,
       status: candidate.status,
       benchmark_results: candidate.benchmarkResults ? JSON.stringify(candidate.benchmarkResults) : null,
       regression_results: candidate.regressionResults ? JSON.stringify(candidate.regressionResults) : null,
@@ -488,6 +498,9 @@ export class EvolutionEngine {
       changes: JSON.parse(row.changes as string),
       generatedBy: row.generated_by as string,
       generatedAt: row.generated_at as string,
+      genomeId: (row.genome_id as string | null) ?? undefined,
+      reason: (row.reason as string | null) ?? undefined,
+      evidence: row.evidence ? JSON.parse(row.evidence as string) as Record<string, unknown> : undefined,
       status: row.status as EvolutionCandidate["status"],
       benchmarkResults: row.benchmark_results ? JSON.parse(row.benchmark_results as string) : undefined,
       regressionResults: row.regression_results ? JSON.parse(row.regression_results as string) : undefined,
@@ -509,6 +522,7 @@ export class EvolutionEngine {
       base_models: JSON.stringify(genome.baseModels),
       adapters: genome.adapters ? JSON.stringify(genome.adapters) : null,
       prompts: genome.prompts ? JSON.stringify(genome.prompts) : null,
+      cognition_config: genome.cognitionConfig ? JSON.stringify(genome.cognitionConfig) : null,
       memory_config: genome.memoryConfig ? JSON.stringify(genome.memoryConfig) : null,
       memory_snapshots: genome.memorySnapshots ? JSON.stringify(genome.memorySnapshots) : null,
       skills: JSON.stringify(genome.skills),
@@ -535,6 +549,7 @@ export class EvolutionEngine {
       baseModels: JSON.parse(row.base_models as string),
       adapters: row.adapters ? JSON.parse(row.adapters as string) : undefined,
       prompts: row.prompts ? JSON.parse(row.prompts as string) : undefined,
+      cognitionConfig: row.cognition_config ? JSON.parse(row.cognition_config as string) : undefined,
       memoryConfig: row.memory_config ? JSON.parse(row.memory_config as string) : undefined,
       memorySnapshots: row.memory_snapshots ? JSON.parse(row.memory_snapshots as string) : undefined,
       skills: JSON.parse(row.skills as string),

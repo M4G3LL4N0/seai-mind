@@ -17,7 +17,7 @@ import { EvaluationEngine } from "@seai/mind";
 import { EvolutionEngine } from "@seai/mind";
 import { createGenomeEngine, GenomeEngine } from "@seai/state";
 import { BenchmarkEngine } from "@seai/mind";
-import { MindRuntime, createMindRuntime, DEFAULT_MIND_TEMPLATE, MindConfig, MindTemplate } from "@seai/mind";
+import { MindRuntime, createMindRuntime, DEFAULT_MIND_TEMPLATE, MindConfig, MindTemplate, defaultStorePaths, getActiveGenome, readExperimentHistory, loadGenomeSnapshot, promoteInStore, rollbackInStore } from "@seai/mind";
 import { IdentitySchema, VersionSchema, type Identity, type Version } from "@seai/core";
 import chalk from "chalk";
 import ora from "ora";
@@ -118,18 +118,27 @@ program
   .option("--quality <target>", "Quality target (0-1)", "0.8")
   .option("--latency <ms>", "Latency budget in ms", "30000")
   .option("--cost <budget>", "Cost budget", "0.10")
+  .option("--mind <name>", "Mind name (adopts its promoted genome if any)", "default")
   .action(async (task, options) => {
     const spinner = ora("Running task...").start();
-    
+
     try {
       const client = createClient({
-        mindName: "default",
+        mindName: options.mind,
         generation: "Darwin",
         codename: "Darwin 0.1",
         autoInitialize: true,
       });
 
       await client.initialize();
+
+      // Adopt the last promoted genome (if any): subsequent executions use
+      // the promoted version. Best-effort — absence changes nothing.
+      try {
+        await client.applyActiveGenome();
+      } catch {
+        // No durable evolution state yet; continue with defaults.
+      }
 
       // Attach any locally reachable model runtime (e.g. Ollama).
       // Absence is fine — the Mind then fails honestly if a model is needed.
@@ -199,34 +208,156 @@ program
     }
   });
 
-program
-  .command("evolve <weakness>")
-  .description("Trigger evolution to address a weakness")
-  .action(async (weakness) => {
-    const spinner = ora(`Evolving to address: ${weakness}...`).start();
-    
+const evolveCmd = program
+  .command("evolve")
+  .description("Self-evolution: propose, inspect, promote, and roll back real experiments");
+
+evolveCmd
+  .command("propose [weakness]")
+  .description("Run a real evolution experiment (baseline vs candidate, measured, gated)")
+  .option("--mind <name>", "Mind name (durable history is keyed by name)", "default")
+  .action(async (weakness, options) => {
+    const spinner = ora("Running evolution experiment...").start();
+
     try {
       const client = createClient({
-        mindName: "default",
+        mindName: options.mind,
         generation: "Darwin",
         codename: "Darwin 0.1",
         autoInitialize: true,
       });
 
       await client.initialize();
-      
-      const result = await client.evolve(weakness);
-      
-      spinner.succeed("Evolution cycle completed");
-      
-      console.log("\n" + chalk.bold("Evolution Result:"));
+      const mind = client.getMindRuntime();
+      if (!mind) throw new Error("Client not initialized");
+
+      const result = await mind.runExperiment();
+      if (!result.ok) throw result.error;
+      const record = result.value;
+
+      spinner.succeed(`Experiment completed: ${record.gate.decision.toUpperCase()}`);
+
+      console.log("\n" + chalk.bold("Evolution Experiment"));
       console.log(chalk.gray("─".repeat(50)));
-      console.log(JSON.stringify(result, null, 2));
-      
+      console.log(`Mind: ${options.mind}`);
+      if (weakness) console.log(`Observation: ${weakness}`);
+      console.log(`Experiment: ${record.id}`);
+      console.log(`Suite: ${record.suiteId} (${record.baseline.taskCount} tasks)`);
+      console.log(`Parent genome: ${record.parentGenomeId}`);
+      console.log(`Candidate: ${record.candidate ? record.candidate.id : "(none proposed)"}`);
+      console.log("\nBaseline:");
+      console.log(`  success ${record.baseline.successCount}/${record.baseline.taskCount}  quality ${record.baseline.qualityRate.toFixed(2)}  latency ${record.baseline.meanLatencyMs?.toFixed(1) ?? "n/a"}ms`);
+      console.log("Candidate:");
+      console.log(`  success ${record.candidateResult.successCount}/${record.candidateResult.taskCount}  quality ${record.candidateResult.qualityRate.toFixed(2)}  latency ${record.candidateResult.meanLatencyMs?.toFixed(1) ?? "n/a"}ms`);
+      console.log("\nDecision:");
+      console.log(`  ${record.gate.decision.toUpperCase()}`);
+      for (const reason of record.gate.reasons) console.log(`  - ${reason}`);
+      if (record.gate.decision === "eligible") {
+        console.log(chalk.yellow(`\nEligible but NOT promoted (auto-promote is off). Run: seai evolve promote ${record.id} --mind ${options.mind}`));
+      }
+
       await client.shutdown();
-      
+
     } catch (error) {
-      spinner.fail("Evolution failed");
+      spinner.fail("Evolution experiment failed");
+      console.error(chalk.red("Error:"), error);
+      process.exit(1);
+    }
+  });
+
+evolveCmd
+  .command("status")
+  .description("Show real evolution state: active genome, latest experiment, promotion/rollback")
+  .option("--mind <name>", "Mind name", "default")
+  .action(async (options) => {
+    try {
+      const paths = defaultStorePaths(options.mind);
+      const active = await getActiveGenome(paths);
+      const history = await readExperimentHistory(paths);
+      const latest = history.length > 0 ? history[history.length - 1] : undefined;
+
+      console.log("\n" + chalk.bold(`Evolution Status (Mind: ${options.mind})`));
+      console.log(chalk.gray("─".repeat(50)));
+      if (!active) {
+        console.log("Active genome: (none yet — run: seai evolve propose)");
+      } else {
+        console.log(`Active genome: ${active.genomeId} (v${active.version.major}.${active.version.minor}.${active.version.patch})`);
+        const parent = await loadGenomeSnapshot(paths, active.genomeId).then(
+          (g) => g?.parentGenome ?? null
+        ).catch(() => null);
+        console.log(`Rollback available: ${parent ? `yes (to ${parent})` : "no (genesis genome)"}`);
+      }
+      if (!latest) {
+        console.log("Latest experiment: (none)");
+      } else {
+        console.log(`Latest experiment: ${latest.id} (${latest.suiteId}) → ${latest.gate.decision.toUpperCase()}`);
+        console.log(`  baseline quality ${latest.baseline.qualityRate.toFixed(2)} vs candidate ${latest.candidateResult.qualityRate.toFixed(2)}`);
+        console.log(`  promotion: ${latest.promotion ? latest.promotion.promotedGenomeId : "(none)"}`);
+        console.log(`  rollback: ${latest.rollback ? latest.rollback.rolledBackGenomeId : "(none)"}`);
+      }
+      console.log(`Experiments on record: ${history.length}`);
+    } catch (error) {
+      console.error(chalk.red("Error:"), error);
+      process.exit(1);
+    }
+  });
+
+evolveCmd
+  .command("history")
+  .description("List recorded evolution experiments with decisions")
+  .option("--mind <name>", "Mind name", "default")
+  .action(async (options) => {
+    try {
+      const history = await readExperimentHistory(defaultStorePaths(options.mind));
+      if (history.length === 0) {
+        console.log("No evolution experiments recorded yet. Run: seai evolve propose");
+        return;
+      }
+      console.log("\n" + chalk.bold(`Evolution History (Mind: ${options.mind})`));
+      console.log(chalk.gray("─".repeat(50)));
+      for (const record of history) {
+        console.log(
+          `${record.id}  ${record.suiteId}  ${record.gate.decision.toUpperCase()}  ` +
+          `q ${record.baseline.qualityRate.toFixed(2)}→${record.candidateResult.qualityRate.toFixed(2)}  ` +
+          `${record.promotion ? `promoted ${record.promotion.promotedGenomeId.slice(0, 8)}` : "not promoted"}  ` +
+          `${record.rollback ? `rolled-back (${record.rollback.reason})` : ""}`
+        );
+      }
+    } catch (error) {
+      console.error(chalk.red("Error:"), error);
+      process.exit(1);
+    }
+  });
+
+evolveCmd
+  .command("promote <experimentId>")
+  .description("Explicitly promote an ELIGIBLE experiment to production (never automatic)")
+  .option("--mind <name>", "Mind name", "default")
+  .action(async (experimentId, options) => {
+    const spinner = ora(`Promoting ${experimentId}...`).start();
+    try {
+      const { genome } = await promoteInStore(defaultStorePaths(options.mind), experimentId);
+      spinner.succeed(`Promoted genome ${genome.id} (v${genome.version.major}.${genome.version.minor}.${genome.version.patch})`);
+      console.log(`Active genome is now ${genome.id}. Subsequent runs use the promoted version.`);
+    } catch (error) {
+      spinner.fail("Promotion failed");
+      console.error(chalk.red("Error:"), error);
+      process.exit(1);
+    }
+  });
+
+evolveCmd
+  .command("rollback")
+  .description("Roll back the active genome to its parent (lineage preserved)")
+  .option("--mind <name>", "Mind name", "default")
+  .option("--reason <reason>", "Rollback reason", "manual rollback via CLI")
+  .action(async (options) => {
+    const spinner = ora("Rolling back...").start();
+    try {
+      const { genome } = await rollbackInStore(defaultStorePaths(options.mind), options.reason);
+      spinner.succeed(`Rolled back to genome ${genome.id} (v${genome.version.major}.${genome.version.minor}.${genome.version.patch})`);
+    } catch (error) {
+      spinner.fail("Rollback failed");
       console.error(chalk.red("Error:"), error);
       process.exit(1);
     }

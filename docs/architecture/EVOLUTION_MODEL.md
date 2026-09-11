@@ -1,138 +1,65 @@
 # SE-AI Mind — Evolution Model
 
-**Date:** 2025-09-08
+**Date:** 2026-09-11 (Darwin 0.1)
+**Status:** REAL LOOP IMPLEMENTED (supersedes the 2025-09-08 design sketch)
 
 ---
 
-## Design Principle
+## Principle
 
-Evolution is a defining SE-AI capability.
-DO NOT REMOVE IT.
-But minimize it.
-
-The kernel should provide the evolution lifecycle.
-Evolution strategies are extensions.
-The kernel does not need every evolutionary algorithm.
-Never permit unrestricted arbitrary self-modification.
-
----
-
-## Evolution Lifecycle
+Self-evolution means evolving cognitive **configuration and measurable
+behavior** — never arbitrary source-code self-modification. Candidates are
+data (`changes: { cognitionConfig, suite }`), applied through versioned
+genomes, promoted only on measured evidence.
 
 ```
-OBSERVE → EVALUATE → PROPOSE → SANDBOX → VERIFY → PROMOTE → ROLLBACK
+OBSERVE (experiences + baseline measurements)
+  → PROPOSE (deterministic generator cites evidence)
+  → SANDBOX (isolated state, timeouts, identical suite)
+  → MEASURE (raw per-task evidence, nothing fabricated)
+  → COMPARE (baseline vs candidate deltas)
+  → GATE (eligible / reject / hold)
+  → PROMOTE (explicit only; auto-promote is off)
+  → USE (live adoption via applyGenome)
+  → ROLLBACK (lineage-preserving restore)
+  → HISTORY (durable, inspectable)
 ```
 
-### 1. OBSERVE
-- Monitor mind performance
-- Identify weaknesses
-- Collect metrics
-- Record experiences
+## What Is Real
 
-### 2. EVALUATE
-- Score current performance
-- Compare against benchmarks
-- Identify improvement opportunities
-- Prioritize weaknesses
+| Piece | Implementation | Evidence |
+|-------|---------------|----------|
+| Candidate generation | `proposeFormatComplianceCandidate()` scans measured baseline failures; reason cites task ids and rates | unit tests |
+| Sandbox | `measureArm()`: fresh storage per arm, per-task timeouts, wall-clock latency, tokens only when reported | isolation + timeout tests |
+| Comparison | `compareArms()`: success/quality/verification/latency/token deltas from raw measurements | math tests incl. negative case |
+| Safety review | `detectThreats()` scan over serialized changes | injection test |
+| Privacy review | denylist of privacy-gated config paths | memory-key test |
+| Promotion | `applyPromotion()` → versioned genome + lineage + audit history | chain test |
+| Rollback | `GenomeEngine.rollbackGenome()` lineage traversal + live re-adoption | chain test (caught 2 real bugs: invalid `candidateId: ""`, stale task cache) |
+| History | append-only JSONL log + snapshots + active pointer | durability + corruption tests |
 
-### 3. PROPOSE
-- Generate evolution candidates
-- Mutate genome
-- Create variants
-- Document changes
+## What Remains Stub / Legacy
 
-### 4. SANDBOX
-- Execute candidate in isolation
-- Measure performance
-- Check for regressions
-- Record results
+- `EvolutionEngine.sandboxCandidate()`: honest HOLD shim (retired simulation;
+  refuses to fabricate). The real path is `MindRuntime.runExperiment()`.
+- `EvolutionLab`: no callers; unimplemented isolation levels stay FUTURE.
+- Legacy `generateCandidates()` default generators (vacuous, all 10 layers):
+  unused by the real path; kept for API stability, documented as legacy.
+- `costReview()` legacy method: superseded by measured token/latency gates.
+- Model-weight evolution (LoRA/distillation): FUTURE by design (Phase 12).
+- OS-level sandboxing (containers/VMs): FUTURE. Darwin sandboxes isolate
+  STATE + enforce timeouts/caps; a candidate needing fs/net beyond engine
+  behavior is out of scope and audited via tool-use evidence.
 
-### 5. VERIFY
-- Security review
-- Privacy review
-- Cost review
-- Regression testing
+## Candidate Types (Phase 1)
 
-### 6. PROMOTE
-- Apply candidate to genome
-- Update mind configuration
-- Record lineage
-- Emit events
-
-### 7. ROLLBACK
-- Revert to previous genome
-- Restore mind state
-- Record rollback reason
+Today: **cognition configuration** (`deterministicFormat: raw|json`) under
+layer `"configuration"`, gated by an allowlist that rejects everything else
+— including model weights. Later, in order: prompts, memory retrieval
+policy, routing policy, tool-selection policy, verification policy, then
+adapters → LoRA → distilled models → architecture. Each addition extends
+the allowlist and its tests, never the kernel shape.
 
 ---
 
-## Evolution Layers
-
-```
-10. architecture
- 9. adapters
- 8. distilled-models
- 7. model-selection
- 6. routing
- 5. knowledge
- 4. skills
- 3. memory
- 2. prompts
- 1. configuration
-```
-
-Each layer represents a different aspect of the mind that can evolve.
-
----
-
-## Candidate Structure
-
-```typescript
-interface EvolutionCandidate {
-  id: string;
-  genomeId: string;
-  layer: EvolutionLayer;
-  description: string;
-  changes: Record<string, unknown>;
-  rationale: string;
-  
-  benchmark?: BenchmarkResult;
-  regression?: RegressionTestResult;
-  securityReview?: SecurityReview;
-  privacyReview?: PrivacyReview;
-  costReview?: CostReview;
-  
-  status: 'proposed' | 'sandboxed' | 'verified' | 'promoted' | 'rejected';
-  version: number;
-  lineage: string[];
-}
-```
-
----
-
-## Sandbox Execution
-
-The sandbox provides isolation for testing candidates:
-- Process isolation
-- Resource limits
-- Timeout enforcement
-- Result collection
-
-**Current implementation:** Simulated (Math.random for metrics)
-**Target implementation:** Docker/VM isolation
-
----
-
-## Safety Constraints
-
-1. No unrestricted self-modification
-2. All candidates must pass security review
-3. All candidates must pass privacy review
-4. All candidates must pass cost review
-5. All candidates must pass regression testing
-6. Automatic rollback on failure
-7. Human approval for critical changes
-
----
-
-*Evolution model defined 2025-09-08.*
+*Evolution model verified 2026-09-11: 19 evolution tests green, full CLI loop demonstrated.*

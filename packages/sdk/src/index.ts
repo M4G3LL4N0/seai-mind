@@ -45,7 +45,7 @@ export {
 export * from "@seai/mind";
 
 // Import for SDK-specific exports
-import { MindRuntime, createMindRuntime, MindConfig, MindTemplate, DEFAULT_MIND_TEMPLATE, detectAndCreateMind } from "@seai/mind";
+import { MindRuntime, createMindRuntime, MindConfig, MindTemplate, DEFAULT_MIND_TEMPLATE, detectAndCreateMind, defaultStorePaths, getActiveGenome, loadGenomeSnapshot } from "@seai/mind";
 import { IdentitySchema, VersionSchema, HardwareProfileSchema, type Identity, type Version, type HardwareProfile } from "@seai/core";
 import { generateId, nowISO } from "@seai/core";
 import { createTelemetry, type Telemetry } from "@seai/core";
@@ -113,6 +113,24 @@ export class SEAIClient {
     }
     const models = found.length > 0 ? await this.mind.getRuntimeManager().discoverAllModels() : [];
     return { runtimes: found.map((r) => r.name), models: models.length };
+  }
+
+  getMindRuntime(): MindRuntime | null {
+    return this.mind;
+  }
+
+  // Boots the Mind from its last promoted genome (if any): subsequent
+  // executions use the promoted version without re-running experiments.
+  // Best-effort — returns applied:false when no durable state exists yet.
+  async applyActiveGenome(): Promise<{ applied: boolean; genomeId?: string }> {
+    if (!this.mind) throw new Error("Client not initialized");
+    const paths = defaultStorePaths(this.config.mindName);
+    const active = await getActiveGenome(paths);
+    if (!active) return { applied: false };
+    const genome = await loadGenomeSnapshot(paths, active.genomeId);
+    if (!genome) return { applied: false };
+    this.mind.applyGenome(genome);
+    return { applied: true, genomeId: genome.id };
   }
 
   async runTask(type: string, input: unknown, options?: {

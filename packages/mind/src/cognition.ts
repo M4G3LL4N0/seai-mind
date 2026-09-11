@@ -20,6 +20,11 @@ export interface CognitionConfig {
   defaultTimeoutMs: number;
   enableCache: boolean;
   cacheTtlMs: number;
+  // Response format for deterministic results. "raw" returns the computed
+  // value; "json" wraps it as {"value": n}. This is versioned Mind
+  // configuration (see Genome.cognitionConfig) and is the subject of the
+  // first real evolution experiment — not a hardcoded behavior switch.
+  deterministicFormat?: "raw" | "json";
 }
 
 const DEFAULT_CONFIG: CognitionConfig = {
@@ -27,6 +32,7 @@ const DEFAULT_CONFIG: CognitionConfig = {
   defaultTimeoutMs: 60000,
   enableCache: true,
   cacheTtlMs: 300000,
+  deterministicFormat: "raw",
 };
 
 export interface TaskContext {
@@ -357,6 +363,9 @@ export class CognitionEngine {
       }
       task.executionPath = "deterministic";
       task.verification = "verified-deterministic";
+      if ((this.config.deterministicFormat ?? "raw") === "json") {
+        return JSON.stringify({ value: deterministic.value });
+      }
       return deterministic.value;
     }
 
@@ -440,7 +449,21 @@ export class CognitionEngine {
   }
 
   private getCacheKey(task: Task): string {
-    return `${task.type}:${JSON.stringify(task.input)}`;
+    // The active cognitive configuration participates in the key: after a
+    // promotion or rollback the same input may legitimately produce different
+    // output, and serving the pre-change cached result would mask the new
+    // version (found by the evolution rollback test).
+    return `${this.config.deterministicFormat ?? "raw"}:${task.type}:${JSON.stringify(task.input)}`;
+  }
+
+  // Applies a promoted genome's cognitive configuration to the live engine.
+  // This is how "USE NEW VERSION" happens without rebooting the Mind.
+  updateConfig(partial: Partial<CognitionConfig>): void {
+    this.config = { ...this.config, ...partial };
+  }
+
+  getConfig(): CognitionConfig {
+    return { ...this.config };
   }
 
   getActiveTasks(): Task[] {

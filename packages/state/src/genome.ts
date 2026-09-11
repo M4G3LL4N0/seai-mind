@@ -120,6 +120,32 @@ export class GenomeEngine {
     return Result.ok(validated);
   }
 
+  // Stores an already-formed genome object as-is (preserving id/version/
+  // lineage). Used to rehydrate snapshots (e.g. promotion/rollback flows)
+  // without rewriting their identity, unlike createGenome/importGenome.
+  async putGenome(genome: Genome, context: SecurityContext): Promise<Result<Genome, Error>> {
+    const privacyCheck = this.securityEngine.checkPrivacy(context, "confidential");
+    if (!privacyCheck) {
+      return Result.err(new Error("Privacy level insufficient for genome storage"));
+    }
+
+    const validated = GenomeSchema.parse(genome);
+    const existing = await this.repository.get(validated.id);
+    if (existing) {
+      await this.repository.update(validated);
+    } else {
+      await this.repository.create(validated);
+    }
+
+    this.telemetry.emitEvent(EventTypes.TASK_CREATED, "genome-engine", {
+      genomeId: validated.id,
+      mindId: validated.mindId,
+      action: "put",
+    });
+
+    return Result.ok(validated);
+  }
+
   async getGenome(genomeId: string): Promise<Genome | null> {
     return this.repository.get(genomeId);
   }
@@ -385,7 +411,7 @@ export class GenomeEngine {
       updatedAt: nowISO(),
       evolutionHistory: [
         ...(genome.evolutionHistory || []),
-        { candidateId: "", action: "rolled-back", timestamp: nowISO(), reason: `Rolled back to version ${targetVersion.major}.${targetVersion.minor}.${targetVersion.patch}` },
+        { action: "rolled-back", timestamp: nowISO(), reason: `Rolled back to version ${targetVersion.major}.${targetVersion.minor}.${targetVersion.patch}` },
       ],
     };
 
@@ -444,6 +470,7 @@ export class GenomeEngine {
       base_models: JSON.stringify(genome.baseModels),
       adapters: genome.adapters ? JSON.stringify(genome.adapters) : null,
       prompts: genome.prompts ? JSON.stringify(genome.prompts) : null,
+      cognition_config: genome.cognitionConfig ? JSON.stringify(genome.cognitionConfig) : null,
       memory_config: genome.memoryConfig ? JSON.stringify(genome.memoryConfig) : null,
       memory_snapshots: genome.memorySnapshots ? JSON.stringify(genome.memorySnapshots) : null,
       skills: JSON.stringify(genome.skills),
@@ -473,6 +500,7 @@ export class GenomeEngine {
       baseModels: JSON.parse(get<string>('base_models')),
       adapters: getOpt<string>('adapters') ? JSON.parse(get<string>('adapters')) : undefined,
       prompts: getOpt<string>('prompts') ? JSON.parse(get<string>('prompts')) : undefined,
+      cognitionConfig: getOpt<string>('cognition_config') ? JSON.parse(get<string>('cognition_config')) : undefined,
       memoryConfig: getOpt<string>('memory_config') ? JSON.parse(get<string>('memory_config')) : undefined,
       memorySnapshots: getOpt<string>('memory_snapshots') ? JSON.parse(get<string>('memory_snapshots')) : undefined,
       skills: JSON.parse(get<string>('skills')),
