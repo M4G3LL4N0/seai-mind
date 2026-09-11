@@ -304,6 +304,12 @@ export class CognitionEngine {
   }
 
   private async selectModel(task: Task, context: TaskContext): Promise<ModelHandle | null> {
+    // Only runtimes probed healthy right now may be selected. An empty list
+    // means "no live runtime" — routing then degrades to an empty decision
+    // and execution fails honestly downstream.
+    const healthyRuntimes = (await this.runtimeManager.probeAvailability())
+      .filter((c) => c.healthy)
+      .map((c) => c.name);
     const routingContext: RoutingContext = {
       task: {
         id: task.id,
@@ -317,6 +323,7 @@ export class CognitionEngine {
       hardware: context.hardwareProfile,
       availableModels: context.availableModels,
       availableProviders: context.availableProviders,
+      availableRuntimes: healthyRuntimes,
       securityContext: context.securityContext,
       policyContext: context.policyContext,
     };
@@ -340,7 +347,19 @@ export class CognitionEngine {
     modelHandle: ModelHandle | null
   ): Promise<unknown> {
     const classification = this.classifyTask(task);
-    
+
+    // Cheapest inference is no inference: pure arithmetic executes
+    // deterministically before any skill, tool, or model is consulted.
+    const deterministic = tryDeterministicArithmetic(task.input);
+    if (deterministic) {
+      if (!verifyDeterministic(deterministic)) {
+        throw new Error("Deterministic verification failed for arithmetic expression");
+      }
+      task.executionPath = "deterministic";
+      task.verification = "verified-deterministic";
+      return deterministic.value;
+    }
+
     // Try skill first
     const skillId = await this.checkSkill(task, context);
     if (skillId) {
@@ -351,6 +370,8 @@ export class CognitionEngine {
       });
       if (skillResult.success) {
         task.skillsUsed = [skillId];
+        task.executionPath = "skill";
+        task.verification = "validated";
         return skillResult.output;
       }
     }
@@ -365,6 +386,8 @@ export class CognitionEngine {
       });
       if (toolResult.success) {
         task.toolsUsed = [toolId];
+        task.executionPath = "tool";
+        task.verification = "validated";
         return toolResult.output;
       }
     }
@@ -377,13 +400,29 @@ export class CognitionEngine {
         maxTokens: 2000,
         temperature: 0.7,
       };
-      
+
       const response = await this.runtimeManager.generate(modelHandle, request);
       task.tokensUsed = response.usage.totalTokens;
+      task.executionPath = "model";
+      task.verification = "validated";
       return response.text;
     }
 
-    throw new Error("No execution method available");
+    throw new Error(this.buildUnavailableDiagnostic(task, context));
+  }
+
+  // Honest failure: report exactly what was probed so the operator knows
+  // how to configure an execution runtime. Never pretend inference happened.
+  private buildUnavailableDiagnostic(task: Task, context: TaskContext): string {
+    const runtimes = this.runtimeManager.listRuntimes().map((r) => r.name);
+    const models = context.availableModels?.length ?? 0;
+    return [
+      "No execution method available.",
+      `Task type "${task.type}" is not deterministic, no skill or tool matched, and no model is configured.`,
+      `Registered runtimes: ${runtimes.length > 0 ? runtimes.join(", ") : "(none)"}.`,
+      `Available models: ${models}.`,
+      "To enable model execution, start a local runtime (e.g. `ollama serve` with a pulled model) and register its adapter, or configure a remote OpenAI-compatible endpoint.",
+    ].join(" ");
   }
 
   private verifyResult(task: Task, output: unknown): boolean {
@@ -415,6 +454,125 @@ export class CognitionEngine {
   clearCache(): void {
     this.taskCache.clear();
   }
+}
+
+export interface DeterministicResult {
+  expression: string;
+  value: number;
+}
+
+// Safe arithmetic evaluator (no eval): tokenizes numbers, + - * / and
+// parentheses, then evaluates with a recursive-descent parser. Returns null
+// when the input contains no arithmetic expression. This is the
+// "cheapest inference is no inference" path: pure arithmetic never needs a model.
+export function tryDeterministicArithmetic(input: unknown): DeterministicResult | null {
+  const text = typeof input === "string" ? input : JSON.stringify(input ?? "");
+  const candidates = text.match(/[\d\s+\-*/().]+/g) || [];
+  for (const raw of candidates) {
+    const expression = raw.trim();
+    if (expression.length === 0 || expression.length > 100) continue;
+    if (!/\d/.test(expression)) continue;
+    if (!/[+\-*/]/.test(expression)) continue;
+    const value = evaluateArithmetic(expression);
+    if (value !== null) return { expression, value };
+  }
+  return null;
+}
+
+function evaluateArithmetic(expression: string): number | null {
+  // Tokenize: numbers, operators, parens, whitespace. Anything else → reject.
+  const tokens: Array<{ type: "num" | "op" | "lparen" | "rparen"; value: string }> = [];
+  let i = 0;
+  while (i < expression.length) {
+    const ch = expression[i] as string;
+    if (ch === " " || ch === "\t") { i++; continue; }
+    if ((ch >= "0" && ch <= "9") || ch === ".") {
+      let j = i;
+      while (j < expression.length && (/[0-9.]/.test(expression[j] as string))) j++;
+      tokens.push({ type: "num", value: expression.slice(i, j) });
+      i = j;
+      continue;
+    }
+    if (ch === "+" || ch === "-" || ch === "*" || ch === "/") {
+      tokens.push({ type: "op", value: ch });
+      i++;
+      continue;
+    }
+    if (ch === "(") { tokens.push({ type: "lparen", value: ch }); i++; continue; }
+    if (ch === ")") { tokens.push({ type: "rparen", value: ch }); i++; continue; }
+    return null;
+  }
+  if (tokens.length === 0) return null;
+
+  // Recursive descent: expr := term (('+'|'-') term)*, term := factor (('*'|'/') factor)*,
+  // factor := number | '(' expr ')' | '-' factor
+  let pos = 0;
+  const peek = () => tokens[pos];
+  function parseExpr(): number | null {
+    let left = parseTerm();
+    if (left === null) return null;
+    for (;;) {
+      const t = peek();
+      if (!t || t.type !== "op" || (t.value !== "+" && t.value !== "-")) return left;
+      pos++;
+      const right = parseTerm();
+      if (right === null) return null;
+      left = t.value === "+" ? left + right : left - right;
+    }
+  }
+  function parseTerm(): number | null {
+    let left = parseFactor();
+    if (left === null) return null;
+    for (;;) {
+      const t = peek();
+      if (!t || t.type !== "op" || (t.value !== "*" && t.value !== "/")) return left;
+      pos++;
+      const right = parseFactor();
+      if (right === null) return null;
+      if (t.value === "/") {
+        if (right === 0) return null;
+        left = left / right;
+      } else {
+        left = left * right;
+      }
+    }
+  }
+  function parseFactor(): number | null {
+    const t = peek();
+    if (!t) return null;
+    if (t.type === "num") {
+      pos++;
+      const n = Number(t.value);
+      return Number.isFinite(n) ? n : null;
+    }
+    if (t.type === "lparen") {
+      pos++;
+      const v = parseExpr();
+      const closing = peek();
+      if (v === null || !closing || closing.type !== "rparen") return null;
+      pos++;
+      return v;
+    }
+    if (t.type === "op" && t.value === "-") {
+      pos++;
+      const v = parseFactor();
+      return v === null ? null : -v;
+    }
+    return null;
+  }
+
+  const result = parseExpr();
+  if (result === null || pos !== tokens.length || !Number.isFinite(result)) return null;
+  return result;
+}
+
+// Re-evaluates a recorded (expression, value) pair from scratch. For the
+// arithmetic class this is a genuine semantic check of the recorded artifact
+// (it guards recording/transmission corruption; parser semantics themselves
+// are pinned by tests). It says nothing about model outputs.
+export function verifyDeterministic(result: DeterministicResult): boolean {
+  const recomputed = evaluateArithmetic(result.expression);
+  return recomputed !== null && Object.is(recomputed, result.value);
 }
 
 export function createCognitionEngine(

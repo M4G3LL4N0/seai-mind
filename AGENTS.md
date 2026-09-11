@@ -2,37 +2,30 @@
 
 ## Architecture Overview
 
-SE-AI Mind is a monorepo built with pnpm containing the following key packages:
+SE-AI Mind is a pnpm monorepo (7 build units) with a 4-layer kernel.
+Full decisions: `docs/architecture/PACKAGE_DECISIONS.md`.
+Details: `docs/architecture/MINIMAL_KERNEL.md`, `MIND_MODEL.md`,
+`RUNTIME_BOUNDARY.md`, `EXECUTION_MODEL.md`, `MEMORY_MODEL.md`,
+`EVOLUTION_MODEL.md`, `GENOME_MODEL.md`, `COGNITIVE_COMPILER.md`.
 
-### Core Packages (`packages/`)
-- **kernel** - Core types, errors, utilities, Result pattern
-- **schemas** - Zod schemas for all domain objects (Mind, Memory, Skill, Tool, Model, Genome, etc.)
-- **hardware** - Hardware detection and profiling (CPU, GPU, memory, storage, thermal)
-- **telemetry** - Event system with structured logging and persistence
-- **security** - Capability-based security, threat detection, privacy gates
-- **policy** - Policy engine for routing, tool execution, memory access, evolution
-- **storage** - SQLite + file storage abstraction with repositories
-- **models** - Model runtime abstraction, registry, runtime manager
-- **providers** - Provider registry with lifecycle management
-- **routing** - Policy-driven model routing engine
-- **memory** - Multi-type memory engine (working, episodic, semantic, procedural, etc.)
-- **skills** - Skill engine with composition and validation
-- **tools** - Capability-based tool system with sandboxed execution
-- **cognition** - Cognitive engine implementing the task processing pipeline
-- **compiler** - Cognitive compiler for goal-to-task-graph compilation
-- **evaluation** - Evaluation engine with built-in suites
-- **evolution** - Evolution engine with sandbox, regression testing, promotion
-- **genome** - Intelligence genome with versioning, branching, diff, rollback
-- **mind** - Main Mind runtime integrating all subsystems
-- **benchmark** - MindBench infrastructure for reproducible experiments
-- **sdk** - High-level client API
-- **cli** - Command-line interface
+### Kernel (`packages/`, dependency order: core ← runtime/state ← mind)
+- **core** - Foundation primitives: Result/errors/IDs, Zod schemas, event
+  telemetry, capability security, policy engine, storage abstraction, hardware
+- **runtime** - Provider-neutral execution: model/provider registries, routing
+  engine, availability probing, local discovery; adapters live in
+  `src/adapters/` (ollama REAL reference, llamacpp mostly real, mlx STUB,
+  local INTENTIONAL test fixture — never auto-registered)
+- **state** - Persistent mind state: memory (Mind-scoped by required `mindId`),
+  skills, tools, genome
+- **mind** - Central orchestrator: Mind runtime, cognition pipeline
+  (deterministic → skill → tool → model, honest failure otherwise),
+  goal compiler, evaluation, evolution, benchmark
 
-### Runtime Adapters (`runtimes/`)
-- **ollama** - Ollama HTTP API adapter
-- **mlx** - MLX-LM adapter for Apple Silicon
-- **llamacpp** - llama.cpp server adapter
-- **local** - Stub runtime for testing
+### Interfaces (not part of the kernel)
+- **sdk** - High-level client API + composition-root bootstrap
+  (`enableLocalRuntimes`)
+- **cli** - Command-line interface (`seai --help/init/run/doctor/status/…`)
+- **web** - Standalone Next.js brochure/docs site; zero `@seai/*` runtime deps
 
 ## Development Rules
 
@@ -136,37 +129,14 @@ export async function myFunction(input: Input): Promise<Result<Output, SEAIError
 ```
 seai-mind/
 ├── packages/
-│   ├── kernel/
-│   ├── schemas/
-│   ├── hardware/
-│   ├── telemetry/
-│   ├── security/
-│   ├── policy/
-│   ├── storage/
-│   ├── models/
-│   ├── providers/
-│   ├── routing/
-│   ├── memory/
-│   ├── skills/
-│   ├── tools/
-│   ├── cognition/
-│   ├── compiler/
-│   ├── evaluation/
-│   ├── evolution/
-│   ├── genome/
-│   ├── mind/
-│   ├── benchmark/
-│   ├── sdk/
-│   └── cli/
-├── runtimes/
-│   ├── ollama/
-│   ├── mlx/
-│   ├── llamacpp/
-│   └── local/
-├── experiments/
-├── benchmarks/
-├── research/
-├── minds/
+│   ├── core/        # kernel primitives (kernel/schemas/telemetry/security/policy/storage/hardware)
+│   ├── runtime/     # execution contract + routing + src/adapters/
+│   ├── state/       # memory/skills/tools/genome
+│   ├── mind/        # orchestrator (mind/cognition/compiler/evaluation/evolution/benchmark)
+│   ├── sdk/         # client API
+│   └── cli/         # seai CLI
+├── minds/           # reference Minds (paios/); not hardwired into the kernel
+├── web/             # standalone Next.js site (Vercel Root Directory)
 ├── docs/
 │   ├── architecture/
 │   ├── concepts/

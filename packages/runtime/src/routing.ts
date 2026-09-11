@@ -32,6 +32,10 @@ export interface RoutingContext {
   hardware: HardwareProfile;
   availableModels: Model[];
   availableProviders: Provider[];
+  // Names of runtimes probed HEALTHY right now. When present, the selected
+  // runtime is constrained to this list so routing can never prefer a
+  // registered-but-dead (or stub) adapter over a live one.
+  availableRuntimes?: string[];
   securityContext: SecurityContext;
   policyContext: PolicyContext;
 }
@@ -285,7 +289,7 @@ export class RoutingEngine {
     
     decision = {
       model: selectedModel.id,
-      runtime: this.selectRuntime(selectedModel, context.hardware),
+      runtime: this.selectRuntime(selectedModel, context.hardware, context.availableRuntimes),
       provider: selectedProvider?.id || "",
       fallback: fallbackOptions.map(f => f.model),
       reasoning: `Selected ${selectedModel.name} via ${appliedRules.join(", ")}`,
@@ -360,7 +364,13 @@ export class RoutingEngine {
 
       case "provider-health":
         filteredProviders = filteredProviders.filter(p => ["canary", "active"].includes(p.verificationState));
-        filteredModels = filteredModels.filter(m => filteredProviders.some(p => p.models.includes(m.id)));
+        // Only constrain models when providers are actually registered. With an
+        // empty provider registry (e.g. models discovered straight from a
+        // local runtime), filtering here would veto every model — the rule
+        // expresses a preference, not a gate (privacy-gate remains fail-closed).
+        if (filteredProviders.length > 0) {
+          filteredModels = filteredModels.filter(m => filteredProviders.some(p => p.models.includes(m.id)));
+        }
         break;
 
       case "benchmark-history":
@@ -388,7 +398,19 @@ export class RoutingEngine {
     return true;
   }
 
-  private selectRuntime(model: Model, hardware: HardwareProfile): string {
+  private selectRuntime(model: Model, hardware: HardwareProfile, availableRuntimes?: string[]): string {
+    const preferred = this.preferredRuntimeForHardware(model, hardware);
+    // Constrain to probed-healthy runtimes when the caller provides them:
+    // a live adapter always beats a hardware-preferred but dead one
+    // (e.g. the MLX stub on Apple Silicon).
+    if (availableRuntimes && availableRuntimes.length > 0) {
+      if (availableRuntimes.includes(preferred)) return preferred;
+      return availableRuntimes[0] as string;
+    }
+    return preferred;
+  }
+
+  private preferredRuntimeForHardware(model: Model, hardware: HardwareProfile): string {
     if (hardware.gpu.present && hardware.gpu.vendor === "Apple") {
       return "mlx";
     }

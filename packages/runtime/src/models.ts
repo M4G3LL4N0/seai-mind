@@ -306,6 +306,12 @@ export abstract class BaseRuntime implements InferenceRuntime {
   }
 }
 
+export interface RuntimeCandidate {
+  name: string;
+  healthy: boolean;
+  errors: string[];
+}
+
 export class RuntimeManager {
   private runtimes: Map<string, InferenceRuntime> = new Map();
   private modelRegistry: ModelRegistryImpl;
@@ -440,6 +446,34 @@ export class RuntimeManager {
       }
     }
     return results;
+  }
+
+  // Minimal provider-neutral availability probe: which registered runtimes
+  // are actually reachable right now? Never throws; unhealthy runtimes are
+  // reported, not hidden. This is the entire Darwin 0.1 selection surface —
+  // the future marketplace can build on these candidates.
+  async probeAvailability(): Promise<RuntimeCandidate[]> {
+    const health = await this.healthCheck();
+    return Array.from(health.entries()).map(([name, h]) => ({
+      name,
+      healthy: h.healthy,
+      errors: h.errors,
+    }));
+  }
+
+  // First healthy runtime, honoring an optional preference order.
+  // Returns null when nothing is available — callers must fail honestly.
+  async selectHealthyRuntime(preferred?: string[]): Promise<InferenceRuntime | null> {
+    const candidates = await this.probeAvailability();
+    const ordered = [...candidates].sort((a, b) => {
+      const ai = preferred ? preferred.indexOf(a.name) : -1;
+      const bi = preferred ? preferred.indexOf(b.name) : -1;
+      return (ai === -1 ? Number.MAX_SAFE_INTEGER : ai) - (bi === -1 ? Number.MAX_SAFE_INTEGER : bi);
+    });
+    for (const c of ordered) {
+      if (c.healthy) return this.runtimes.get(c.name) ?? null;
+    }
+    return null;
   }
 
   private emitModelEvent(type: string, handle: ModelHandle, payload: Record<string, unknown>): void {

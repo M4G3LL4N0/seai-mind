@@ -261,6 +261,12 @@ export const TaskSchema = z.object({
   modelUsed: z.string().optional(),
   toolsUsed: z.array(z.string()).optional(),
   skillsUsed: z.array(z.string()).optional(),
+  // How the task was actually executed. Set by the cognition engine.
+  executionPath: z.enum(["deterministic", "skill", "tool", "model"]).optional(),
+  // verified-deterministic: recomputed from the recorded expression (arithmetic class only).
+  // validated: output passed syntactic checks (non-empty / schema match).
+  // none: no verification was possible.
+  verification: z.enum(["verified-deterministic", "validated", "none"]).optional(),
   tokensUsed: z.number().int().nonnegative().optional(),
   latencyMs: z.number().int().nonnegative().optional(),
 });

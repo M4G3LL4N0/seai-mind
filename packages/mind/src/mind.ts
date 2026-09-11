@@ -17,6 +17,7 @@ import {
   type HardwareProfile,
   type Genome,
   type Version,
+  type Task,
 } from "@seai/core";
 import { generateId, nowISO, Result } from "@seai/core";
 import { createTelemetry, EventTypes, type Telemetry } from "@seai/core";
@@ -28,7 +29,7 @@ import { SkillEngine, type SkillConfig } from "@seai/state";
 import { ToolEngine, type ToolConfig } from "@seai/state";
 import { CognitionEngine, type CognitionConfig, type TaskContext } from "./cognition.js";
 import { RoutingEngine } from "@seai/runtime";
-import { RuntimeManager, createRuntimeManager } from "@seai/runtime";
+import { RuntimeManager, createRuntimeManager, type InferenceRuntime } from "@seai/runtime";
 import { CognitiveCompiler, type CompilerConfig } from "./compiler.js";
 import { EvaluationEngine, type EvaluationConfig } from "./evaluation.js";
 import { EvolutionEngine, type EvolutionConfig } from "./evolution.js";
@@ -229,12 +230,75 @@ export class MindRuntime {
     };
 
     const result = await this.cognitionEngine.processTask(taskInput as any, fullTaskContext);
-    
+
     this.state.activeTasks = this.cognitionEngine.getTaskCount();
     this.state.status = this.state.activeTasks > 0 ? "running" : "ready";
     this.state.lastActivity = nowISO();
 
+    // Record the experience (best effort: a recording failure must never
+    // fail the task itself). Successes are episodic memory; failures are
+    // negative memory so the Mind can learn what does not work.
+    await this.recordExperience(result.ok ? result.value : null, result.ok ? null : result.error, fullTaskContext);
+
     return result;
+  }
+
+  private async recordExperience(task: Task | null, error: Error | null, context: TaskContext): Promise<void> {
+    try {
+      // Best-effort genome link: null when the Mind has no genome yet.
+      let genomeVersion: unknown = null;
+      try {
+        const latest = await this.genomeEngine.getLatestGenome(this.config.identity.id);
+        genomeVersion = latest ? latest.version : null;
+      } catch {
+        genomeVersion = null;
+      }
+      const truncate = (value: unknown, max = 500): string => {
+        const s = typeof value === "string" ? value : JSON.stringify(value ?? null);
+        return s.length > max ? s.slice(0, max) + "…[truncated]" : s;
+      };
+      const experience = {
+        kind: "task-experience",
+        taskId: task?.id ?? generateId(),
+        taskType: task?.type ?? "unknown",
+        input: truncate(task?.input),
+        result: task ? truncate(task.result) : undefined,
+        error: error ? String(error.message || error) : undefined,
+        executionPath: task?.executionPath ?? "none",
+        modelUsed: task?.modelUsed,
+        toolsUsed: task?.toolsUsed,
+        skillsUsed: task?.skillsUsed,
+        tokensUsed: task?.tokensUsed,
+        latencyMs: task?.latencyMs,
+        verification: task?.verification ?? "none",
+        status: task?.status ?? "failed",
+        genomeVersion,
+      };
+      const res = await this.memoryEngine.capture(
+        this.config.identity.id,
+        task && error === null ? "episodic" : "negative",
+        experience,
+        context.securityContext,
+        {
+          confidence: 1,
+          utility: 0.5,
+          metadata: { kind: "task-experience", verification: experience.verification },
+        }
+      );
+      if (!res.ok) {
+        this.telemetry.emitEvent(EventTypes.TASK_COMPLETED, "mind-runtime", {
+          mindId: this.config.identity.id,
+          action: "experience-record-failed",
+          error: String(res.error),
+        });
+      }
+    } catch (err) {
+      this.telemetry.emitEvent(EventTypes.TASK_COMPLETED, "mind-runtime", {
+        mindId: this.config.identity.id,
+        action: "experience-record-failed",
+        error: String(err),
+      });
+    }
   }
 
   async compileGoal(goal: string): Promise<Result<any, Error>> {
@@ -336,6 +400,25 @@ export class MindRuntime {
 
   getToolEngine(): ToolEngine {
     return this.toolEngine;
+  }
+
+  getRuntimeManager(): RuntimeManager {
+    return this.runtimeManager;
+  }
+
+  // Registers an execution runtime (e.g. a probed-local Ollama adapter) and
+  // refreshes the model's catalog the cognition layer routes over. Takes the
+  // provider-neutral InferenceRuntime interface — the Mind never imports an
+  // adapter directly.
+  async registerRuntime(runtime: InferenceRuntime): Promise<void> {
+    this.runtimeManager.registerRuntime(runtime);
+    if (this.taskContext) {
+      try {
+        this.taskContext.availableModels = await this.runtimeManager.discoverAllModels();
+      } catch {
+        this.taskContext.availableModels = [];
+      }
+    }
   }
 
   getCognitionEngine(): CognitionEngine {

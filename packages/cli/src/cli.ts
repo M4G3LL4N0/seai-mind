@@ -130,7 +130,14 @@ program
       });
 
       await client.initialize();
-      
+
+      // Attach any locally reachable model runtime (e.g. Ollama).
+      // Absence is fine — the Mind then fails honestly if a model is needed.
+      const local = await client.enableLocalRuntimes();
+      if (local.runtimes.length > 0) {
+        spinner.text = `Running task (runtime: ${local.runtimes.join(", ")}, models: ${local.models})...`;
+      }
+
       const result = await client.runTask("general", task, {
         priority: parseInt(options.priority),
         privacy: options.privacy,
@@ -172,7 +179,8 @@ program
       });
 
       await client.initialize();
-      
+      await client.enableLocalRuntimes();
+
       spinner.text = "Executing goal...";
       const result = await client.compileGoal(goal);
       

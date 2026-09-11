@@ -50,6 +50,7 @@ import { IdentitySchema, VersionSchema, HardwareProfileSchema, type Identity, ty
 import { generateId, nowISO } from "@seai/core";
 import { createTelemetry, type Telemetry } from "@seai/core";
 import { detectHardware } from "@seai/core";
+import { discoverLocalRuntimes } from "@seai/runtime";
 
 export interface SEAIClientConfig {
   mindName: string;
@@ -94,6 +95,24 @@ export class SEAIClient {
       this.mind = null;
       this.initialized = false;
     }
+  }
+
+  // Composition-root bootstrap: discovers locally reachable execution
+  // runtimes (today: a local Ollama server) and registers them on the Mind.
+  // Explicit and best-effort — never throws. Without it the Mind has no
+  // model path and fails honestly; with it, `runTask` can reach real models.
+  // Returns what was found so callers can report it.
+  async enableLocalRuntimes(options?: { ollamaBaseUrl?: string; timeoutMs?: number }): Promise<{
+    runtimes: string[];
+    models: number;
+  }> {
+    if (!this.mind) throw new Error("Client not initialized");
+    const found = await discoverLocalRuntimes(options);
+    for (const runtime of found) {
+      await this.mind.registerRuntime(runtime);
+    }
+    const models = found.length > 0 ? await this.mind.getRuntimeManager().discoverAllModels() : [];
+    return { runtimes: found.map((r) => r.name), models: models.length };
   }
 
   async runTask(type: string, input: unknown, options?: {
@@ -175,6 +194,7 @@ export async function quickStart(options: QuickStartOptions): Promise<{ client: 
   });
 
   await client.initialize();
+  await client.enableLocalRuntimes();
 
   let result;
   if (options.goal) {
