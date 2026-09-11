@@ -1,0 +1,12 @@
+# SE-AI Mind - Robots.txt
+User-agent: *
+Allow: /
+
+# Sitemap
+Sitemap: https://seai.dev/sitemap.xml
+
+# Disallow private/admin areas
+Disallow: /command/
+Disallow: /api/
+Disallow: /_next/
+Disallow: /static/

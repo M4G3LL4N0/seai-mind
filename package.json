@@ -1,0 +1,26 @@
+{
+  "name": "seai-mind",
+  "version": "0.1.0-alpha",
+  "description": "Self-Evolving Artificial Intelligence - Darwin Generation",
+  "private": true,
+  "scripts": {
+    "build": "pnpm -r run build",
+    "test": "pnpm -r run test",
+    "lint": "pnpm -r run lint",
+    "typecheck": "pnpm -r run typecheck",
+    "doctor": "node scripts/doctor.js",
+    "init": "node scripts/init.js",
+    "bench": "node scripts/benchmark.js"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "packageManager": "pnpm@11.17.0",
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0",
+    "eslint": "^9.0.0",
+    "prettier": "^3.3.0"
+  }
+}

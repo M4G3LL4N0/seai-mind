@@ -1,0 +1,126 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 248 250 252;
+    --foreground: 30 41 59;
+    --muted: 241 245 249;
+    --muted-foreground: 100 116 139;
+    --border: 226 232 240;
+    --ring: 90 141 176;
+    --primary: 90 141 176;
+    --primary-foreground: 255 255 255;
+    --secondary: 241 245 249;
+    --secondary-foreground: 30 41 59;
+    --accent: 241 245 249;
+    --accent-foreground: 30 41 59;
+    --destructive: 239 68 68;
+    --destructive-foreground: 255 255 255;
+  }
+
+  .dark {
+    --background: 15 23 42;
+    --foreground: 248 250 252;
+    --muted: 30 41 59;
+    --muted-foreground: 148 163 184;
+    --border: 51 65 85;
+    --ring: 122 162 204;
+    --primary: 122 162 204;
+    --primary-foreground: 15 23 42;
+    --secondary: 30 41 59;
+    --secondary-foreground: 248 250 252;
+    --accent: 30 41 59;
+    --accent-foreground: 248 250 252;
+    --destructive: 239 68 68;
+    --destructive-foreground: 255 255 255;
+  }
+}
+
+@layer base {
+  * {
+    border-color: hsl(var(--border));
+  }
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+  .animate-in {
+    animation: animateIn 0.3s ease-out forwards;
+  }
+  @keyframes animateIn {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
+
+@layer components {
+  .container-narrow {
+    @apply max-w-3xl mx-auto px-4 sm:px-6 lg:px-8;
+  }
+  .container-wide {
+    @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8;
+  }
+  .prose-seai {
+    @apply text-slate-700 dark:text-slate-300 leading-relaxed;
+  }
+  .prose-seai h2 {
+    @apply text-2xl font-semibold text-slate-900 dark:text-white mt-10 mb-4 pb-2 border-b border-slate-200 dark:border-slate-700;
+  }
+  .prose-seai h3 {
+    @apply text-xl font-medium text-slate-900 dark:text-white mt-8 mb-3;
+  }
+  .prose-seai p {
+    @apply mb-4 leading-7;
+  }
+  .prose-seai ul {
+    @apply list-disc list-inside mb-4 space-y-2;
+  }
+  .prose-seai ol {
+    @apply list-decimal list-inside mb-4 space-y-2;
+  }
+  .prose-seai code {
+    @apply bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-sm font-mono text-darwin-600 dark:text-darwin-400;
+  }
+  .prose-seai pre {
+    @apply bg-slate-950 dark:bg-slate-950 p-4 rounded-lg overflow-x-auto mb-6;
+  }
+  .prose-seai pre code {
+    @apply bg-transparent p-0 text-slate-100;
+  }
+  .prose-seai a {
+    @apply text-seai-600 dark:text-seai-400 underline underline-offset-2 hover:text-seai-700 dark:hover:text-seai-300;
+  }
+  .prose-seai blockquote {
+    @apply border-l-4 border-seai-500 pl-4 italic text-slate-600 dark:text-slate-400 my-4;
+  }
+  .prose-seai table {
+    @apply w-full border-collapse mb-6;
+  }
+  .prose-seai th,
+  .prose-seai td {
+    @apply border border-slate-200 dark:border-slate-700 px-4 py-2 text-left;
+  }
+  .prose-seai th {
+    @apply bg-slate-100 dark:bg-slate-800 font-semibold;
+  }
+}
