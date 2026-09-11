@@ -25,6 +25,10 @@ export interface CognitionConfig {
   // configuration (see Genome.cognitionConfig) and is the subject of the
   // first real evolution experiment — not a hardcoded behavior switch.
   deterministicFormat?: "raw" | "json";
+  // Extra system instruction appended to model requests. Versioned Mind
+  // configuration and the subject of prompt-evolution candidates
+  // (e.g. a JSON-only constraint). Never set from task input.
+  systemPromptExtra?: string;
 }
 
 const DEFAULT_CONFIG: CognitionConfig = {
@@ -34,6 +38,11 @@ const DEFAULT_CONFIG: CognitionConfig = {
   cacheTtlMs: 300000,
   deterministicFormat: "raw",
 };
+
+// Engine-wide model sampling default, recorded in experiment records so
+// model-backed measurements carry their sampling parameters. Single source:
+// executeTask below must use this constant, never a literal.
+export const COGNITION_DEFAULT_TEMPERATURE = 0.7;
 
 export interface TaskContext {
   mindId: string;
@@ -134,7 +143,7 @@ export class CognitionEngine {
       // Step 2: Check Cache
       const cacheStep = await this.executeStep(trace, "check-cache", "Check cache", async () => {
         if (this.config.enableCache) {
-          const cached = this.taskCache.get(this.getCacheKey(task));
+          const cached = this.taskCache.get(this.getCacheKey(task, this.modelIdsOf(context)));
           if (cached && Date.now() - cached.timestamp < this.config.cacheTtlMs) {
             return cached.output;
           }
@@ -201,7 +210,7 @@ export class CognitionEngine {
       trace.totalLatencyMs = task.latencyMs;
 
       if (this.config.enableCache) {
-        this.taskCache.set(this.getCacheKey(task), { output: task.result, timestamp: Date.now() });
+        this.taskCache.set(this.getCacheKey(task, this.modelIdsOf(context)), { output: task.result, timestamp: Date.now() });
       }
 
       this.telemetry.emitEvent(EventTypes.TASK_COMPLETED, "cognition-engine", { 
@@ -403,11 +412,13 @@ export class CognitionEngine {
 
     // Fall back to model
     if (modelHandle) {
+      const baseSystemPrompt = "You are a helpful AI assistant.";
+      const extra = (this.config.systemPromptExtra ?? "").trim();
       const request: GenerationRequest = {
         prompt: typeof task.input === "string" ? task.input : JSON.stringify(task.input),
-        systemPrompt: "You are a helpful AI assistant.",
+        systemPrompt: extra.length > 0 ? `${baseSystemPrompt}\n\n${extra}` : baseSystemPrompt,
         maxTokens: 2000,
-        temperature: 0.7,
+        temperature: COGNITION_DEFAULT_TEMPERATURE,
       };
 
       const response = await this.runtimeManager.generate(modelHandle, request);
@@ -448,12 +459,23 @@ export class CognitionEngine {
     throw new Error("Task requires escalation");
   }
 
-  private getCacheKey(task: Task): string {
-    // The active cognitive configuration participates in the key: after a
-    // promotion or rollback the same input may legitimately produce different
-    // output, and serving the pre-change cached result would mask the new
-    // version (found by the evolution rollback test).
-    return `${this.config.deterministicFormat ?? "raw"}:${task.type}:${JSON.stringify(task.input)}`;
+  private modelIdsOf(context: TaskContext): string[] {
+    return (context.availableModels ?? []).map((m) => m.id);
+  }
+
+  private getCacheKey(task: Task, availableModelIds: string[] = []): string {
+    // Cache identity must include EVERYTHING behaviorally relevant, or an
+    // old result masquerades as evidence for a new candidate:
+    // - deterministicFormat + systemPromptExtra: promoted/rolled-back config
+    //   changes output for identical input (found by the evolution rollback test).
+    // - available model ids: the same input routes to different models as
+    //   runtimes appear/disappear; a cached model-A answer must never stand
+    //   in for a model-B execution.
+    // (Cache is per-engine-instance, so mind identity is structural.)
+    const format = this.config.deterministicFormat ?? "raw";
+    const prompt = (this.config.systemPromptExtra ?? "").trim();
+    const models = [...availableModelIds].sort().join(",");
+    return `${format}|${prompt}|${models}|${task.type}:${JSON.stringify(task.input)}`;
   }
 
   // Applies a promoted genome's cognitive configuration to the live engine.

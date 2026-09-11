@@ -31,6 +31,15 @@ export interface ExperimentTask {
   type: string;
   input: unknown;
   expected?: unknown;
+  // Model-evaluation contract fields (Phase 1). timeoutMs is ENFORCED by
+  // the sandbox; category is recorded per measurement. allowedRuntimes /
+  // allowedModels / privacy are recorded with the suite for reproducibility
+  // and reserved for future enforcement (documented, not faked).
+  category?: string;
+  timeoutMs?: number;
+  privacy?: string;
+  allowedRuntimes?: string[];
+  allowedModels?: string[];
 }
 
 export interface ExperimentSuite {
@@ -89,6 +98,88 @@ export type OutputCriterion = (
   expected: unknown
 ) => { pass: boolean; details: string };
 
+// Structured-extraction verification (fully deterministic — no LLM judge).
+// Output must be PURE JSON (fenced/preambled text fails), with all expected
+// keys present at equal values. Extra keys are permitted but noted.
+export function extractionCriterion(
+  output: unknown,
+  expected: unknown
+): { pass: boolean; details: string } {
+  if (typeof output !== "string") {
+    return { pass: false, details: `not a JSON string (got ${typeof output})` };
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(output);
+  } catch {
+    return { pass: false, details: "unparseable as JSON (fenced or preambled text fails)" };
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    return { pass: false, details: "top level is not a JSON object" };
+  }
+  const want = expected as Record<string, unknown>;
+  const got = parsed as Record<string, unknown>;
+  for (const [key, value] of Object.entries(want)) {
+    if (!(key in got)) return { pass: false, details: `missing required field "${key}"` };
+    if (got[key] !== value) {
+      return { pass: false, details: `field "${key}": expected ${JSON.stringify(value)}, got ${JSON.stringify(got[key])}` };
+    }
+  }
+  const extras = Object.keys(got).filter((k) => !(k in want));
+  return { pass: true, details: extras.length > 0 ? `match (extra fields: ${extras.join(",")})` : "exact match" };
+}
+
+// Model-backed suite: unambiguous extraction tasks. Every expected value is
+// stated explicitly in the input so verification needs no judgment.
+export const EXTRACTION_JSON_V1: ExperimentSuite = {
+  id: "extraction-json-v1",
+  description: "Structured extraction as pure JSON via a real model; deterministic verification",
+  tasks: [
+    { id: "ext-1", type: "chat", category: "extraction", input: 'Extract name, age, and city as JSON from: "Maria is 34 and lives in Lima."', expected: { name: "Maria", age: 34, city: "Lima" } },
+    { id: "ext-2", type: "chat", category: "extraction", input: 'Extract name, age, and city as JSON from: "Chen is 28 and lives in Oslo."', expected: { name: "Chen", age: 28, city: "Oslo" } },
+    { id: "ext-3", type: "chat", category: "extraction", input: 'Extract product, price, and currency as JSON from: "The widget costs 19.99 USD."', expected: { product: "widget", price: 19.99, currency: "USD" } },
+    { id: "ext-4", type: "chat", category: "extraction", input: 'Extract title, year, and director as JSON from: "The film Dune from 2021 was directed by Villeneuve."', expected: { title: "Dune", year: 2021, director: "Villeneuve" } },
+    { id: "ext-5", type: "chat", category: "extraction", input: 'Extract name, role, and team as JSON from: "Ava works as designer on team Atlas."', expected: { name: "Ava", role: "designer", team: "Atlas" } },
+    { id: "ext-6", type: "chat", category: "extraction", input: 'Extract city, country, and population as JSON from: "Reno is a city in USA with population 274000."', expected: { city: "Reno", country: "USA", population: 274000 } },
+    { id: "ext-7", type: "chat", category: "extraction", input: 'Extract book, author, and pages as JSON from: "Solaris by Lem has 204 pages."', expected: { book: "Solaris", author: "Lem", pages: 204 } },
+    { id: "ext-8", type: "chat", category: "extraction", input: 'Extract language, paradigm, and year as JSON from: "Rust is a systems language from 2010."', expected: { language: "Rust", paradigm: "systems", year: 2010 } },
+    { id: "ext-9", type: "chat", category: "extraction", input: 'Extract fruit, color, and weight as JSON from: "The mango is yellow and weighs 300 grams."', expected: { fruit: "mango", color: "yellow", weight: 300 } },
+    { id: "ext-10", type: "chat", category: "extraction", input: 'Extract planet, moons, and rings as JSON from: "Saturn has 146 moons and has rings."', expected: { planet: "Saturn", moons: 146, rings: true } },
+  ],
+};
+
+// Named candidate configurations for cognitive behavior (data, not code).
+// The experiment runner applies these to sandboxed cognition clones.
+export interface CandidateSpec {
+  name: string;
+  description: string;
+  config: {
+    deterministicFormat?: "raw" | "json";
+    systemPromptExtra?: string;
+  };
+}
+
+export const CANDIDATE_SPECS: Record<string, CandidateSpec> = {
+  "json-format": {
+    name: "json-format",
+    description: "Emit deterministic numeric results as {\"value\": n}",
+    config: { deterministicFormat: "json" },
+  },
+  "json-only-prompt": {
+    name: "json-only-prompt",
+    description: "Constrain model responses to pure JSON via system instruction",
+    config: {
+      systemPromptExtra:
+        "Return ONLY valid JSON with no explanations, no markdown fences, and no surrounding text.",
+    },
+  },
+  "polite-json-prompt": {
+    name: "polite-json-prompt",
+    description: "Weaker nudge toward JSON output (comparison candidate)",
+    config: { systemPromptExtra: "Please return your answer in JSON format." },
+  },
+};
+
 // ---------------------------------------------------------------------------
 // Measurements (raw evidence, never aggregated away)
 // ---------------------------------------------------------------------------
@@ -101,6 +192,10 @@ export interface TaskMeasurement {
   latencyMs: number;
   tokensUsed: number | null;
   executionPath: string;
+  // Model that actually executed (null for deterministic/failed tasks).
+  // Required for reproducibility metadata and honest token attribution.
+  modelUsed: string | null;
+  category?: string;
   error?: string;
   outputPreview?: string;
 }
@@ -157,11 +252,13 @@ export async function measureArm(
   tasks: ExperimentTask[],
   criterion: OutputCriterion
 ): Promise<ArmResult> {
-  const timeoutMs = deps.taskTimeoutMs ?? 10000;
+  const defaultTimeoutMs = deps.taskTimeoutMs ?? 10000;
   const capped = tasks.slice(0, deps.maxTasks ?? 50);
   const measurements: TaskMeasurement[] = [];
 
   for (const task of capped) {
+    // Per-task timeout from the task contract wins over the arm default.
+    const timeoutMs = task.timeoutMs ?? defaultTimeoutMs;
     const start = Date.now();
     try {
       const res = await withTimeout(
@@ -182,6 +279,8 @@ export async function measureArm(
           latencyMs,
           tokensUsed: null,
           executionPath: "none",
+          modelUsed: null,
+          category: task.category,
           error: String(res.error),
         });
         continue;
@@ -196,6 +295,8 @@ export async function measureArm(
         latencyMs,
         tokensUsed: typeof res.value.tokensUsed === "number" ? res.value.tokensUsed : null,
         executionPath: res.value.executionPath ?? "unknown",
+        modelUsed: typeof res.value.modelUsed === "string" ? res.value.modelUsed : null,
+        category: task.category,
         outputPreview: JSON.stringify(out)?.slice(0, 200),
       });
     } catch (error) {
@@ -207,6 +308,8 @@ export async function measureArm(
         latencyMs: Date.now() - start,
         tokensUsed: null,
         executionPath: "none",
+        modelUsed: null,
+        category: task.category,
         error: String(error),
       });
     }
@@ -268,6 +371,30 @@ export function compareArms(baseline: ArmResult, candidate: ArmResult): Comparis
 }
 
 // ---------------------------------------------------------------------------
+// Named suites with their criterion and default candidate set, so CLI and
+// tests address experiments by id without duplicating wiring.
+export interface SuiteRegistration {
+  suite: ExperimentSuite;
+  criterion: OutputCriterion;
+  candidates: CandidateSpec[];
+}
+
+export const EXPERIMENT_SUITES: Record<string, SuiteRegistration> = {
+  "arithmetic-format-v1": {
+    suite: ARITHMETIC_FORMAT_SUITE_V1,
+    criterion: formatComplianceCriterion,
+    candidates: [CANDIDATE_SPECS["json-format"] as CandidateSpec],
+  },
+  "extraction-json-v1": {
+    suite: EXTRACTION_JSON_V1,
+    criterion: extractionCriterion,
+    candidates: [
+      CANDIDATE_SPECS["json-only-prompt"] as CandidateSpec,
+      CANDIDATE_SPECS["polite-json-prompt"] as CandidateSpec,
+    ],
+  },
+};
+
 // Deterministic candidate generation from measured evidence (Phase 2)
 // ---------------------------------------------------------------------------
 
@@ -287,18 +414,27 @@ export function proposeFormatComplianceCandidate(input: {
   genomeId: string;
   suiteId: string;
   baseline: ArmResult;
+  suite: ExperimentSuite;
+  // The configuration this candidate proposes (default: the json-format
+  // change). No LLM is involved in Darwin generation: the mapping from
+  // measured format failures to these known-good configurations is explicit
+  // and recorded in the reason.
+  sought?: { deterministicFormat?: "raw" | "json"; systemPromptExtra?: string };
+  specName?: string;
 }): EvolutionCandidate | null {
   const failures = input.baseline.measurements.filter((m) => m.success && m.outputMatches === false);
   if (failures.length === 0) return null;
   const failedTaskIds = failures.map((m) => m.taskId);
+  const sought = input.sought ?? { deterministicFormat: "json" };
+  const spec = input.specName ?? "json-format";
   return {
     id: generateId(),
     genomeId: input.genomeId,
     layer: "configuration",
-    description: "Wrap deterministic numeric results as JSON when a response format is implied",
+    description: `Apply "${spec}" response formatting to fix measured format failures`,
     changes: {
-      cognitionConfig: { deterministicFormat: "json" },
-      suite: ARITHMETIC_FORMAT_SUITE_V1,
+      cognitionConfig: { ...sought },
+      suite: input.suite,
     },
     generatedBy: "format-compliance-generator",
     generatedAt: nowISO(),
@@ -306,7 +442,8 @@ export function proposeFormatComplianceCandidate(input: {
       `${failures.length}/${input.baseline.taskCount} tasks in suite ${input.suiteId} ` +
       `completed but failed format compliance (tasks ${failedTaskIds.join(", ")}). ` +
       `Baseline quality ${input.baseline.qualityRate.toFixed(2)}. ` +
-      `Hypothesis: emitting {"value": n} instead of raw n fixes compliance without touching arithmetic semantics.`,
+      `Hypothesis: applying "${spec}" ${JSON.stringify(sought)} fixes compliance ` +
+      `without touching task semantics.`,
     evidence: {
       suiteId: input.suiteId,
       failedTaskIds,
@@ -343,8 +480,13 @@ export interface GateThresholds {
 }
 
 const COGNITION_ALLOWLIST: Record<string, string[]> = {
-  cognitionConfig: ["deterministicFormat"],
+  cognitionConfig: ["deterministicFormat", "systemPromptExtra"],
 };
+
+// Prompt-instruction candidates are bounded text: long enough for a real
+// constraint, short enough to review and incapable of smuggling a payload
+// past the threat scan by volume.
+const MAX_SYSTEM_PROMPT_EXTRA_CHARS = 2000;
 
 const PRIVACY_GATED_KEYS = ["memory", "policies", "security", "privacy"];
 
@@ -382,10 +524,22 @@ export function reviewCandidateChanges(changes: Record<string, unknown>): GateCh
     allowlistDetails = `Disallowed top-level change paths: ${disallowed.join(", ")}`;
   }
   // deterministicFormat value domain check.
-  const fmt = (changes.cognitionConfig as Record<string, unknown> | undefined)?.deterministicFormat;
+  const cognition = (changes.cognitionConfig ?? {}) as Record<string, unknown>;
+  const fmt = cognition.deterministicFormat;
   if (allowlistPassed && fmt !== undefined && fmt !== "raw" && fmt !== "json") {
     allowlistPassed = false;
     allowlistDetails = `deterministicFormat must be "raw" or "json" (got ${JSON.stringify(fmt)})`;
+  }
+  // systemPromptExtra value domain check: short reviewed string only.
+  const extra = cognition.systemPromptExtra;
+  if (allowlistPassed && extra !== undefined) {
+    if (typeof extra !== "string") {
+      allowlistPassed = false;
+      allowlistDetails = "systemPromptExtra must be a string";
+    } else if (extra.length > MAX_SYSTEM_PROMPT_EXTRA_CHARS) {
+      allowlistPassed = false;
+      allowlistDetails = `systemPromptExtra exceeds ${MAX_SYSTEM_PROMPT_EXTRA_CHARS} chars (${extra.length})`;
+    }
   }
   checks.push({ name: "safety-allowlist", passed: allowlistPassed, details: allowlistDetails, severity: "reject" });
 
@@ -466,11 +620,23 @@ export function decideGate(input: {
 
   // 6. Cost/latency: measured only. Unknown (null) metrics are reported as
   // unknown — never invented. A large measured latency regression holds.
+  // Sub-100ms absolute differences are measurement noise, not regressions:
+  // without a floor, CPU contention between parallel test workers (or any
+  // loaded host) flips deterministic sub-millisecond arms from ELIGIBLE to
+  // HOLD. Found by the reproducibility test failing under parallel load.
+  const LATENCY_NOISE_FLOOR_MS = 100;
   if (input.deltas.latency_delta_ms === null) {
     checks.push({
       name: "cost-latency",
       passed: true,
       details: "Latency delta unavailable (insufficient timing data); no cost claim made",
+      severity: "hold",
+    });
+  } else if (Math.abs(input.deltas.latency_delta_ms) < LATENCY_NOISE_FLOOR_MS) {
+    checks.push({
+      name: "cost-latency",
+      passed: true,
+      details: `Latency delta ${input.deltas.latency_delta_ms.toFixed(1)}ms within ${LATENCY_NOISE_FLOOR_MS}ms measurement-noise floor`,
       severity: "hold",
     });
   } else {
@@ -492,6 +658,11 @@ export function decideGate(input: {
       });
     }
   }
+  // Token budget is PROPORTIONAL (legacy policy: 10%): an absolute
+  // zero-increase rule would ban every prompt candidate by construction,
+  // because longer prompts strictly cost more tokens. The budget bounds the
+  // trade, it does not forbid paying for measured improvement.
+  const MAX_TOKEN_INCREASE_RATIO = 0.1;
   if (input.deltas.token_delta === null) {
     checks.push({
       name: "cost-tokens",
@@ -499,20 +670,31 @@ export function decideGate(input: {
       details: "No model tokens measured in either arm; no token-cost claim made",
       severity: "hold",
     });
-  } else if (input.deltas.token_delta > 0) {
-    checks.push({
-      name: "cost-tokens",
-      passed: false,
-      details: `Token usage increased by ${input.deltas.token_delta}`,
-      severity: "hold",
-    });
-  } else {
+  } else if (input.deltas.token_delta <= 0) {
     checks.push({
       name: "cost-tokens",
       passed: true,
       details: "Token usage did not increase",
       severity: "hold",
     });
+  } else {
+    const base = input.baseline.totalTokensKnown;
+    const ratio = base > 0 ? input.deltas.token_delta / base : Number.POSITIVE_INFINITY;
+    if (ratio > MAX_TOKEN_INCREASE_RATIO) {
+      checks.push({
+        name: "cost-tokens",
+        passed: false,
+        details: `Token usage increased ${(ratio * 100).toFixed(1)}% (budget ${(MAX_TOKEN_INCREASE_RATIO * 100).toFixed(0)}%)`,
+        severity: "hold",
+      });
+    } else {
+      checks.push({
+        name: "cost-tokens",
+        passed: true,
+        details: `Token usage increased ${(ratio * 100).toFixed(1)}% (within ${(MAX_TOKEN_INCREASE_RATIO * 100).toFixed(0)}% budget)`,
+        severity: "hold",
+      });
+    }
   }
 
   // 7. Reproducibility: the decision is only valid with full raw evidence.
@@ -596,6 +778,14 @@ export interface PromotionInfo {
   promotedAt: string;
 }
 
+// One evaluated candidate next to the primary: same baseline, same gate.
+export interface CandidateEvaluation {
+  candidate: EvolutionCandidate;
+  result: ArmResult;
+  deltas: ComparisonDeltas;
+  gate: GateReport;
+}
+
 export interface RollbackInfo {
   rolledBackGenomeId: string;
   rolledBackVersion: Version;
@@ -615,6 +805,15 @@ export interface ExperimentRecord {
   // Null when the baseline arm revealed nothing to fix (no candidate
   // proposed). The gate then holds; promotion is impossible.
   candidate: EvolutionCandidate | null;
+  // Additional candidates evaluated against the SAME baseline in the same
+  // run (Phase 13: small-N comparison, not population evolution). Empty in
+  // single-candidate mode. The primary `candidate` above stays first for
+  // backward compatibility.
+  extraCandidates: CandidateEvaluation[];
+  // Engine sampling defaults in force during measurement. Stochastic model
+  // arms can never be bit-reproduced; deterministic arms can.
+  sampling: { temperature: number };
+  reproducibility: "full" | "limited";
   baseline: ArmResult;
   candidateResult: ArmResult;
   deltas: ComparisonDeltas;
@@ -742,13 +941,12 @@ export async function loadGenomeSnapshot(
   }
 }
 
-// True while the latest promotion is still the active state (i.e. no
-// rollback happened after it). Allows honest re-promotion after a rollback:
-// promotion → rollback → promote is a new version, not a duplicate.
+// True while a promotion is the latest lifecycle event. Deterministic by
+// construction (no clock comparison — same-millisecond promote/rollback
+// pairs made timestamp ordering flaky): a new promotion clears the rollback
+// marker, a rollback sets it. Prior transitions stay in older log lines.
 export function isCurrentlyPromoted(record: ExperimentRecord): boolean {
-  if (!record.promotion) return false;
-  if (!record.rollback) return true;
-  return record.rollback.rolledBackAt <= record.promotion.promotedAt;
+  return !!record.promotion && !record.rollback;
 }
 
 // Store-level promotion/rollback: pure operations over durable records, so
@@ -756,21 +954,33 @@ export function isCurrentlyPromoted(record: ExperimentRecord): boolean {
 // the same pure transitions (applyPromotion/applyRollback) plus live apply.
 export async function promoteInStore(
   paths: ExperimentStorePaths,
-  experimentId: string
+  experimentId: string,
+  candidateId?: string
 ): Promise<{ record: ExperimentRecord; genome: Genome }> {
   const history = await readExperimentHistory(paths);
   const record = history.find((r) => r.id === experimentId);
   if (!record) throw new Error(`Experiment not found: ${experimentId}`);
-  if (record.gate.decision !== "eligible") {
-    throw new Error(`Experiment ${experimentId} is not eligible (decision: ${record.gate.decision})`);
-  }
   if (isCurrentlyPromoted(record)) {
     throw new Error(`Experiment ${experimentId} already promoted (roll back first to re-promote)`);
   }
-  if (!record.candidate) throw new Error(`Experiment ${experimentId} produced no candidate`);
+  const pool: Array<{ candidate: EvolutionCandidate | null; gate: GateReport }> = [
+    { candidate: record.candidate, gate: record.gate },
+    ...record.extraCandidates.map((e) => ({ candidate: e.candidate as EvolutionCandidate | null, gate: e.gate })),
+  ];
+  const chosen = candidateId ? pool.find((c) => c.candidate?.id === candidateId) : pool[0];
+  if (!chosen?.candidate) {
+    throw new Error(
+      candidateId
+        ? `Candidate ${candidateId} not found in experiment ${experimentId}`
+        : `Experiment ${experimentId} produced no candidate`
+    );
+  }
+  if (chosen.gate.decision !== "eligible") {
+    throw new Error(`Candidate ${chosen.candidate.id} is not eligible (decision: ${chosen.gate.decision})`);
+  }
   const parent = await loadGenomeSnapshot(paths, record.parentGenomeId);
   if (!parent) throw new Error(`Parent genome snapshot missing: ${record.parentGenomeId}`);
-  const genome = applyPromotion(parent, record.candidate);
+  const genome = applyPromotion(parent, chosen.candidate);
   await storeGenomeSnapshot(paths, genome);
   const updated: ExperimentRecord = {
     ...record,
@@ -779,6 +989,9 @@ export async function promoteInStore(
       promotedVersion: genome.version,
       promotedAt: nowISO(),
     },
+    // A new promotion supersedes any earlier rollback marker; the rolled-back
+    // event itself remains in older appended log lines.
+    rollback: null,
     lineage: [...record.lineage, genome.id],
   };
   await updateExperimentRecord(paths, updated);

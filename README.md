@@ -18,7 +18,7 @@ node packages/cli/dist/cli.js run "What is 2 + 2?"
 With a local Ollama server running, model tasks execute for real; without
 one, the system fails honestly instead of faking inference.
 
-## First evolution loop
+## First evolution loop (deterministic, no model needed)
 
 ```bash
 node packages/cli/dist/cli.js evolve propose --mind default
@@ -27,6 +27,16 @@ node packages/cli/dist/cli.js evolve promote <experimentId> --mind default
 node packages/cli/dist/cli.js run "What is 3 + 3? Answer in JSON." --mind default
 node packages/cli/dist/cli.js evolve rollback --mind default
 ```
+
+## Model-backed evolution (needs a local runtime, e.g. Ollama)
+
+```bash
+node packages/cli/dist/cli.js evolve propose --mind default --suite extraction-json-v1 --models --candidates json-only-prompt,polite-json-prompt
+node packages/cli/dist/cli.js evolve compare <experimentId> --mind default
+```
+
+`compare` shows per-arm measurements and deltas. Promotion stays explicit;
+`--models` is required — without a reachable runtime the suite holds honestly.
 
 ## Architecture (7 build units)
 

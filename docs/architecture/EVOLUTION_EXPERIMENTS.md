@@ -25,10 +25,21 @@ Promotion creates genome N+1, live adoption switches output to
 ```bash
 seai evolve propose "json answers wanted" --mind default
 seai evolve history --mind default
+seai evolve compare <experimentId> --mind default
 seai evolve promote <experimentId> --mind default
-seai run "What is 3 + 3? Answer in JSON." --mind default  # uses promoted version
-seai evolve rollback --mind default --reason "..."
+seai run "What is 3 + 3? Answer in JSON." --mind default
+seai evolve rollback --mind default
 ```
+
+## Second Experiment: `extraction-json-v1` (model-backed)
+
+Ten unambiguous extraction tasks executed through a REAL model on identical
+workloads: baseline (stock system prompt) vs `json-only-prompt` (pure-JSON
+constraint) vs `polite-json-prompt` (weaker nudge). Verification is the
+deterministic `extractionCriterion` (pure `JSON.parse` + required-field
+equality) — no LLM judge. Requires `--models` with a reachable runtime;
+without one the suite holds honestly instead of fabricating. Full writeup:
+`docs/research/MODEL_EVOLUTION_FIRST_EXPERIMENT.md`.
 
 `propose` never promotes (auto-promote is off). `promote` requires an
 ELIGIBLE decision. `rollback` requires an active genome with a parent.

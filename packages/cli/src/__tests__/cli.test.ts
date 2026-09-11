@@ -133,3 +133,46 @@ describe("cli/evolve REAL (durable file state, isolated tmpdir)", () => {
     expect(runJson.stdout).toContain('"executionPath": "deterministic"');
   }, 300000);
 });
+
+describe("cli/evolve model-backed REAL", () => {
+  it("propose with extraction suite and no models holds honestly (no fabrication)", async () => {
+    const { mkdtempSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const env = { SEAI_DATA_DIR: mkdtempSync(join(tmpdir(), "seai-cli-model-")) };
+    const res = await runCliEnv(
+      env, "evolve", "propose", "extraction drill", "--mind", "climodel", "--suite", "extraction-json-v1"
+    );
+    expect(res.code).toBe(0);
+    expect(res.stdout).toContain("HOLD");
+    expect(res.stdout).toContain("extraction-json-v1");
+  }, 180000);
+
+  it("unknown suite is rejected with known options", async () => {
+    const { mkdtempSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const env = { SEAI_DATA_DIR: mkdtempSync(join(tmpdir(), "seai-cli-suite-")) };
+    const res = await runCliEnv(env, "evolve", "propose", "--mind", "clisuite", "--suite", "nope");
+    expect(res.code).toBe(1);
+    expect(res.stdout + res.stderr).toContain("Unknown suite");
+  }, 120000);
+
+  it("compare exposes per-arm measurements and deltas", async () => {
+    const { mkdtempSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const env = { SEAI_DATA_DIR: mkdtempSync(join(tmpdir(), "seai-cli-compare-")) };
+    const mind = "clicompare";
+    const propose = await runCliEnv(env, "evolve", "propose", "--mind", mind);
+    expect(propose.code).toBe(0);
+    const idMatch = propose.stdout.match(/Experiment:\s+(\S+)/);
+    const experimentId = idMatch?.[1] as string;
+    const compare = await runCliEnv(env, "evolve", "compare", experimentId, "--mind", mind);
+    expect(compare.code).toBe(0);
+    expect(compare.stdout).toContain("baseline ");
+    expect(compare.stdout).toContain("Deltas (candidate − baseline)");
+    expect(compare.stdout).toContain("ELIGIBLE");
+    expect(compare.stdout).toContain("Per-task (candidate arm)");
+  }, 180000);
+});

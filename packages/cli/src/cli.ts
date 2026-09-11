@@ -216,6 +216,9 @@ evolveCmd
   .command("propose [weakness]")
   .description("Run a real evolution experiment (baseline vs candidate, measured, gated)")
   .option("--mind <name>", "Mind name (durable history is keyed by name)", "default")
+  .option("--suite <id>", "Suite: arithmetic-format-v1 (deterministic) or extraction-json-v1 (model-backed)", "arithmetic-format-v1")
+  .option("--candidates <csv>", "Candidate configs (default: suite defaults)")
+  .option("--models", "Enable locally reachable model runtimes first (needed for model-backed suites)")
   .action(async (weakness, options) => {
     const spinner = ora("Running evolution experiment...").start();
 
@@ -228,32 +231,44 @@ evolveCmd
       });
 
       await client.initialize();
-      const mind = client.getMindRuntime();
-      if (!mind) throw new Error("Client not initialized");
 
-      const result = await mind.runExperiment();
-      if (!result.ok) throw result.error;
-      const record = result.value;
+      const result = await client.evolve(weakness ?? "operator-requested experiment", {
+        suiteId: options.suite,
+        candidates: options.candidates
+          ? String(options.candidates).split(",").map((s) => s.trim()).filter(Boolean)
+          : undefined,
+        enableModels: Boolean(options.models),
+      });
+      const record = result as {
+        experimentId: string;
+        suite: string;
+        baselineQuality: number;
+        candidateQuality: number;
+        decision: string;
+        reasons: string[];
+        reproducibility: string;
+        extraCandidates: Array<{ candidateId: string; quality: number; decision: string }>;
+      };
 
-      spinner.succeed(`Experiment completed: ${record.gate.decision.toUpperCase()}`);
+      spinner.succeed(`Experiment completed: ${String(record.decision).toUpperCase()}`);
 
       console.log("\n" + chalk.bold("Evolution Experiment"));
       console.log(chalk.gray("─".repeat(50)));
       console.log(`Mind: ${options.mind}`);
       if (weakness) console.log(`Observation: ${weakness}`);
-      console.log(`Experiment: ${record.id}`);
-      console.log(`Suite: ${record.suiteId} (${record.baseline.taskCount} tasks)`);
-      console.log(`Parent genome: ${record.parentGenomeId}`);
-      console.log(`Candidate: ${record.candidate ? record.candidate.id : "(none proposed)"}`);
-      console.log("\nBaseline:");
-      console.log(`  success ${record.baseline.successCount}/${record.baseline.taskCount}  quality ${record.baseline.qualityRate.toFixed(2)}  latency ${record.baseline.meanLatencyMs?.toFixed(1) ?? "n/a"}ms`);
-      console.log("Candidate:");
-      console.log(`  success ${record.candidateResult.successCount}/${record.candidateResult.taskCount}  quality ${record.candidateResult.qualityRate.toFixed(2)}  latency ${record.candidateResult.meanLatencyMs?.toFixed(1) ?? "n/a"}ms`);
+      console.log(`Experiment: ${record.experimentId}`);
+      console.log(`Suite: ${record.suite}`);
+      console.log(`Reproducibility: ${record.reproducibility}`);
+      console.log(`\nBaseline quality: ${Number(record.baselineQuality).toFixed(2)}`);
+      console.log(`Candidate quality: ${Number(record.candidateQuality).toFixed(2)}`);
+      for (const extra of record.extraCandidates ?? []) {
+        console.log(`Candidate ${extra.candidateId.slice(0, 8)}: quality ${Number(extra.quality).toFixed(2)} → ${String(extra.decision).toUpperCase()}`);
+      }
       console.log("\nDecision:");
-      console.log(`  ${record.gate.decision.toUpperCase()}`);
-      for (const reason of record.gate.reasons) console.log(`  - ${reason}`);
-      if (record.gate.decision === "eligible") {
-        console.log(chalk.yellow(`\nEligible but NOT promoted (auto-promote is off). Run: seai evolve promote ${record.id} --mind ${options.mind}`));
+      console.log(`  ${String(record.decision).toUpperCase()}`);
+      for (const reason of record.reasons) console.log(`  - ${reason}`);
+      if (record.decision === "eligible") {
+        console.log(chalk.yellow(`\nEligible but NOT promoted (auto-promote is off). Run: seai evolve promote ${record.experimentId} --mind ${options.mind}`));
       }
 
       await client.shutdown();
@@ -330,13 +345,49 @@ evolveCmd
   });
 
 evolveCmd
-  .command("promote <experimentId>")
-  .description("Explicitly promote an ELIGIBLE experiment to production (never automatic)")
+  .command("compare <experimentId>")
+  .description("Show per-arm measurements and deltas for one experiment")
   .option("--mind <name>", "Mind name", "default")
   .action(async (experimentId, options) => {
+    try {
+      const history = await readExperimentHistory(defaultStorePaths(options.mind));
+      const record = history.find((r) => r.id === experimentId);
+      if (!record) {
+        console.error(chalk.red(`Error: experiment not found: ${experimentId}`));
+        process.exit(1);
+      }
+      const arm = (name: string, a: { successCount: number; taskCount: number; qualityRate: number; verificationRate: number; meanLatencyMs: number | null; totalTokensKnown: number; tokensUnknown: number }) =>
+        `${name}: success ${a.successCount}/${a.taskCount}  quality ${a.qualityRate.toFixed(2)}  verified ${a.verificationRate.toFixed(2)}  latency ${a.meanLatencyMs?.toFixed(1) ?? "n/a"}ms  tokens ${a.tokensUnknown > 0 ? "n/a" : String(a.totalTokensKnown)}`;
+      console.log("\n" + chalk.bold(`Experiment ${record.id} (${record.suiteId})`));
+      console.log(chalk.gray("─".repeat(50)));
+      console.log(arm("baseline ", record.baseline));
+      console.log(arm("candidate", record.candidateResult));
+      for (const extra of record.extraCandidates ?? []) {
+        console.log(arm(`extra ${extra.candidate.id.slice(0, 8)}`, extra.result));
+      }
+      console.log("\nDeltas (candidate − baseline):");
+      console.log(`  success ${record.deltas.success_delta >= 0 ? "+" : ""}${record.deltas.success_delta.toFixed(2)}  quality ${record.deltas.quality_delta >= 0 ? "+" : ""}${record.deltas.quality_delta.toFixed(2)}  verified ${record.deltas.verification_delta >= 0 ? "+" : ""}${record.deltas.verification_delta.toFixed(2)}`);
+      console.log(`  latency ${record.deltas.latency_delta_ms === null ? "n/a" : `${record.deltas.latency_delta_ms >= 0 ? "+" : ""}${record.deltas.latency_delta_ms.toFixed(1)}ms`}  tokens ${record.deltas.token_delta === null ? "n/a (not measured)" : String(record.deltas.token_delta)}`);
+      console.log(`\nDecision: ${record.gate.decision.toUpperCase()}  reproducibility: ${record.reproducibility}`);
+      for (const reason of record.gate.reasons) console.log(`  - ${reason}`);
+      console.log("\nPer-task (candidate arm):");
+      for (const m of record.candidateResult.measurements) {
+        console.log(`  ${m.taskId}: ${m.success ? (m.outputMatches ? "pass" : "FAIL-match") : "FAIL-exec"}  ${m.executionPath}${m.modelUsed ? ` ${m.modelUsed.slice(0, 8)}` : ""}  ${m.latencyMs}ms${m.tokensUsed !== null ? `  ${m.tokensUsed}tok` : ""}${m.error ? `  err: ${m.error.slice(0, 80)}` : ""}`);
+      }
+    } catch (error) {
+      console.error(chalk.red("Error:"), error);
+      process.exit(1);
+    }
+  });
+
+evolveCmd
+  .command("promote <experimentId> [candidateId]")
+  .description("Explicitly promote an ELIGIBLE candidate to production (never automatic)")
+  .option("--mind <name>", "Mind name", "default")
+  .action(async (experimentId, candidateId, options) => {
     const spinner = ora(`Promoting ${experimentId}...`).start();
     try {
-      const { genome } = await promoteInStore(defaultStorePaths(options.mind), experimentId);
+      const { genome } = await promoteInStore(defaultStorePaths(options.mind), experimentId, candidateId);
       spinner.succeed(`Promoted genome ${genome.id} (v${genome.version.major}.${genome.version.minor}.${genome.version.patch})`);
       console.log(`Active genome is now ${genome.id}. Subsequent runs use the promoted version.`);
     } catch (error) {

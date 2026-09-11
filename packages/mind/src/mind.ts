@@ -27,7 +27,7 @@ import { PolicyEngine, type PolicyContext } from "@seai/core";
 import { MemoryEngine, type MemoryConfig } from "@seai/state";
 import { SkillEngine, type SkillConfig } from "@seai/state";
 import { ToolEngine, type ToolConfig } from "@seai/state";
-import { CognitionEngine, type CognitionConfig, type TaskContext } from "./cognition.js";
+import { CognitionEngine, COGNITION_DEFAULT_TEMPERATURE, type CognitionConfig, type TaskContext } from "./cognition.js";
 import { RoutingEngine } from "@seai/runtime";
 import { RuntimeManager, createRuntimeManager, type InferenceRuntime } from "@seai/runtime";
 import { CognitiveCompiler, type CompilerConfig } from "./compiler.js";
@@ -46,6 +46,11 @@ import {
   proposeFormatComplianceCandidate,
   isCurrentlyPromoted,
   summarizeEmptyArm,
+  CANDIDATE_SPECS,
+  type CandidateEvaluation,
+  type CandidateSpec,
+  type GateReport,
+  type OutputCriterion,
   appendExperimentRecord,
   defaultStorePaths,
   getActiveGenome,
@@ -336,12 +341,24 @@ export class MindRuntime {
   // tasks, measured evidence, explicit gate). The legacy simulated path is
   // retired: this method executes, measures, and records — never fabricates.
   // The weakness string is recorded as the motivating observation.
-  async evolve(weakness: string, opts?: { storeBaseDir?: string }): Promise<Result<any, Error>> {
+  async evolve(
+    weakness: string,
+    opts?: {
+      storeBaseDir?: string;
+      suite?: ExperimentSuite;
+      criterion?: OutputCriterion;
+      candidates?: CandidateSpec[];
+    }
+  ): Promise<Result<any, Error>> {
     if (!this.taskContext) {
       return Result.err(new Error("Mind not initialized"));
     }
 
-    const result = await this.runExperiment(ARITHMETIC_FORMAT_SUITE_V1, opts);
+    const result = await this.runExperiment(opts?.suite ?? ARITHMETIC_FORMAT_SUITE_V1, {
+      storeBaseDir: opts?.storeBaseDir,
+      criterion: opts?.criterion,
+      candidates: opts?.candidates,
+    });
     if (!result.ok) return result;
 
     const record = result.value;
@@ -353,14 +370,26 @@ export class MindRuntime {
       candidateQuality: record.candidateResult.qualityRate,
       decision: record.gate.decision,
       reasons: record.gate.reasons,
+      reproducibility: record.reproducibility,
+      extraCandidates: record.extraCandidates.map((e) => ({
+        candidateId: e.candidate.id,
+        quality: e.result.qualityRate,
+        decision: e.gate.decision,
+      })),
     });
   }
 
-  // Full experiment lifecycle for one suite. Never auto-promotes: promotion
-  // requires an explicit promoteExperiment() call (AUTO-PROMOTE = FALSE).
+  // Full experiment lifecycle for one suite: baseline arm plus one or more
+  // candidate arms, ALL on the identical task list. Never auto-promotes:
+  // promotion requires an explicit promoteExperiment() call (AUTO-PROMOTE = FALSE).
   async runExperiment(
     suite: ExperimentSuite = ARITHMETIC_FORMAT_SUITE_V1,
-    opts?: { storeBaseDir?: string }
+    opts?: {
+      storeBaseDir?: string;
+      criterion?: OutputCriterion;
+      candidates?: CandidateSpec[];
+      taskTimeoutMs?: number;
+    }
   ): Promise<Result<ExperimentRecord, Error>> {
     if (!this.taskContext) {
       return Result.err(new Error("Mind not initialized"));
@@ -368,68 +397,77 @@ export class MindRuntime {
 
     const startedAt = nowISO();
     const paths = defaultStorePaths(this.config.identity.name, opts?.storeBaseDir);
+    const criterion = opts?.criterion ?? formatComplianceCriterion;
+    const specs = opts?.candidates ?? [CANDIDATE_SPECS["json-format"] as CandidateSpec];
     this.telemetry.emitEvent(EventTypes.EVOLUTION_STARTED, "mind-runtime", {
       mindId: this.config.identity.id,
       suite: suite.id,
       tasks: suite.tasks.length,
+      candidates: specs.map((s) => s.name),
     });
 
     try {
       const parent = await this.ensureBaselineGenome();
 
+      const measureWith = (sandbox: { cognition: CognitionEngine; taskContext: TaskContext }) =>
+        measureArm(
+          {
+            telemetry: this.telemetry,
+            cognition: sandbox.cognition,
+            mindId: this.config.identity.id,
+            taskContext: sandbox.taskContext,
+            taskTimeoutMs: opts?.taskTimeoutMs,
+          },
+          suite.tasks,
+          criterion
+        );
+
       // BASELINE arm: live cognition config, isolated sandbox storage.
       const baselineSandbox = this.spawnSandbox(this.cognitionEngine.getConfig());
-      const baseline = await measureArm(
-        {
-          telemetry: this.telemetry,
-          cognition: baselineSandbox.cognition,
+      const baseline = await measureWith(baselineSandbox);
+
+      // CANDIDATES from measured evidence (none when nothing failed).
+      const evaluated: CandidateEvaluation[] = [];
+      for (const spec of specs) {
+        const candidate = proposeFormatComplianceCandidate({
           mindId: this.config.identity.id,
-          taskContext: baselineSandbox.taskContext,
-        },
-        suite.tasks,
-        formatComplianceCriterion
-      );
-
-      // CANDIDATE from measured evidence (null when nothing failed).
-      const candidate = proposeFormatComplianceCandidate({
-        mindId: this.config.identity.id,
-        genomeId: parent.id,
-        suiteId: suite.id,
-        baseline,
-      });
-
-      let candidateResult = summarizeEmptyArm();
-      if (candidate) {
-        const candidateSandbox = this.spawnSandbox({
+          genomeId: parent.id,
+          suiteId: suite.id,
+          baseline,
+          suite,
+          sought: { ...spec.config },
+          specName: spec.name,
+        });
+        if (!candidate) continue;
+        const sandbox = this.spawnSandbox({
           ...this.cognitionEngine.getConfig(),
           ...((candidate.changes.cognitionConfig ?? {}) as Partial<CognitionConfig>),
         });
-        candidateResult = await measureArm(
-          {
-            telemetry: this.telemetry,
-            cognition: candidateSandbox.cognition,
-            mindId: this.config.identity.id,
-            taskContext: candidateSandbox.taskContext,
-          },
-          suite.tasks,
-          formatComplianceCriterion
-        );
+        const result = await measureWith(sandbox);
+        const deltas = compareArms(baseline, result);
+        const gate = decideGate({
+          baseline,
+          candidate: result,
+          deltas,
+          candidateChanges: candidate.changes as Record<string, unknown>,
+          thresholds: { minQualityImprovement: this.config.evolution.minImprovementThreshold },
+        });
+        evaluated.push({ candidate, result, deltas, gate });
       }
 
-      const deltas = compareArms(baseline, candidateResult);
-      const gate = candidate
-        ? decideGate({
-            baseline,
-            candidate: candidateResult,
-            deltas,
-            candidateChanges: candidate.changes as Record<string, unknown>,
-            thresholds: { minQualityImprovement: this.config.evolution.minImprovementThreshold },
-          })
+      const primary = evaluated[0];
+      const candidateResult = primary ? primary.result : summarizeEmptyArm();
+      const deltas = primary ? primary.deltas : compareArms(baseline, summarizeEmptyArm());
+      const gate = primary
+        ? primary.gate
         : {
             decision: "hold" as const,
             reasons: ["HOLD: baseline arm revealed no failures, so no candidate was proposed"],
             checks: [],
           };
+      const usesModel =
+        baseline.measurements.some((m) => m.executionPath === "model") ||
+        evaluated.some((e) => e.result.measurements.some((m) => m.executionPath === "model"));
 
       const record: ExperimentRecord = {
         id: generateId(),
@@ -439,11 +477,14 @@ export class MindRuntime {
         completedAt: nowISO(),
         parentGenomeId: parent.id,
         parentVersion: parent.version,
-        candidate,
+        candidate: primary ? primary.candidate : null,
         baseline,
         candidateResult,
         deltas,
         gate,
+        extraCandidates: evaluated.slice(1),
+        sampling: { temperature: COGNITION_DEFAULT_TEMPERATURE },
+        reproducibility: usesModel ? "limited" : "full",
         promotion: null,
         rollback: null,
         lineage: [...(parent.lineage ?? []), parent.id],
@@ -458,6 +499,8 @@ export class MindRuntime {
         baselineQuality: baseline.qualityRate,
         candidateQuality: candidateResult.qualityRate,
         decision: gate.decision,
+        candidates: evaluated.map((e) => ({ name: e.candidate.description, decision: e.gate.decision })),
+        reproducibility: record.reproducibility,
       });
 
       return Result.ok(record);
@@ -466,9 +509,14 @@ export class MindRuntime {
     }
   }
 
-  // Explicit promotion: ELIGIBLE record → new genome version → live adoption.
-  // Throws unless the gate decision is eligible and no promotion happened yet.
-  async promoteExperiment(experimentId: string, opts?: { storeBaseDir?: string }): Promise<Result<Genome, Error>> {
+  // Explicit promotion: an ELIGIBLE candidate → new genome version → live
+  // adoption. Defaults to the primary candidate; pass a candidateId to
+  // promote one of the extra evaluated candidates instead. Refuses unless
+  // that candidate's own gate is eligible and nothing is actively promoted.
+  async promoteExperiment(
+    experimentId: string,
+    opts?: { storeBaseDir?: string; candidateId?: string }
+  ): Promise<Result<Genome, Error>> {
     if (!this.taskContext) {
       return Result.err(new Error("Mind not initialized"));
     }
@@ -478,18 +526,40 @@ export class MindRuntime {
       const history = await readExperimentHistory(paths);
       const record = history.find((r) => r.id === experimentId);
       if (!record) return Result.err(new Error(`Experiment not found: ${experimentId}`));
-      if (record.gate.decision !== "eligible") {
-        return Result.err(new Error(`Experiment ${experimentId} is not eligible (decision: ${record.gate.decision})`));
-      }
       if (isCurrentlyPromoted(record)) {
         return Result.err(new Error(`Experiment ${experimentId} already promoted (roll back first to re-promote)`));
       }
-      if (!record.candidate) return Result.err(new Error(`Experiment ${experimentId} produced no candidate`));
+
+      const pool: Array<{ candidate: EvolutionCandidate | null; gate: GateReport }> = [
+        { candidate: record.candidate, gate: record.gate },
+        ...record.extraCandidates.map((e) => ({ candidate: e.candidate, gate: e.gate })),
+      ];
+      const match = opts?.candidateId
+        ? pool.find((c) => c.candidate !== null && c.candidate.id === opts.candidateId)
+        : pool[0];
+      const chosen =
+        match && match.candidate !== null
+          ? { candidate: match.candidate as EvolutionCandidate, gate: match.gate }
+          : undefined;
+      if (!chosen) {
+        return Result.err(
+          new Error(
+            opts?.candidateId
+              ? `Candidate ${opts.candidateId} not found in experiment ${experimentId}`
+              : `Experiment ${experimentId} produced no candidate`
+          )
+        );
+      }
+      if (chosen.gate.decision !== "eligible") {
+        return Result.err(
+          new Error(`Candidate ${chosen.candidate.id} is not eligible (decision: ${chosen.gate.decision})`)
+        );
+      }
 
       const parent = await loadGenomeSnapshot(paths, record.parentGenomeId);
       if (!parent) return Result.err(new Error(`Parent genome snapshot missing: ${record.parentGenomeId}`));
 
-      const genome = applyPromotion(parent, record.candidate);
+      const genome = applyPromotion(parent, chosen.candidate);
       const sysCtx = this.systemGenomeContext();
       const put = await this.genomeEngine.putGenome(genome, sysCtx);
       if (!put.ok) return put;
@@ -503,6 +573,7 @@ export class MindRuntime {
           promotedVersion: put.value.version,
           promotedAt: nowISO(),
         },
+        rollback: null,
         lineage: [...record.lineage, put.value.id],
       };
       await updateExperimentRecord(paths, updated);
@@ -675,8 +746,11 @@ export class MindRuntime {
       taskContext: {
         ...live,
         securityContext: { ...live.securityContext },
-        availableModels: [],
-        availableProviders: [],
+        // Model arms need the live catalog: routing selects from these while
+        // execution still targets only probe-healthy runtimes. Copy (never
+        // alias) so arms cannot mutate live routing state.
+        availableModels: [...live.availableModels],
+        availableProviders: [...live.availableProviders],
       },
     };
   }

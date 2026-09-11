@@ -22,8 +22,8 @@
 | `privacy-config` | reject | rejects `memory`/`policies`/`security`/`privacy` paths |
 | `regression-success` | reject | candidate success rate must not drop below baseline |
 | `quality-improvement` | reject if worse, hold if inconclusive | delta vs `minQualityImprovement` (default 0.05) |
-| `cost-latency` | hold | measured increase beyond ratio budget holds; unavailable data passes with an explicit "no claim" note |
-| `cost-tokens` | hold | increased measured tokens hold; all-null tokens pass with "no token-cost claim made" |
+| `cost-latency` | hold | sub-100ms absolute deltas pass as measurement noise; larger increases beyond the 50% ratio budget hold; unavailable data passes with an explicit "no claim" note |
+| `cost-tokens` | hold | token increases beyond 10% of baseline hold (legacy proportional policy); all-null tokens pass with "no token-cost claim made". An absolute zero-increase rule was tried and rejected: it bans every prompt candidate by construction, since longer prompts strictly cost more tokens |
 | `reproducibility` | reject | both arms ran the identical workload with raw evidence preserved |
 
 ## Promotion Rules (Phase 5)

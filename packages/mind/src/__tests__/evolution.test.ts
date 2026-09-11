@@ -7,6 +7,8 @@ import {
   createMindConfigFromTemplate,
   DEFAULT_MIND_TEMPLATE,
   ARITHMETIC_FORMAT_SUITE_V1,
+  EXTRACTION_JSON_V1,
+  extractionCriterion,
   formatComplianceCriterion,
   proposeFormatComplianceCandidate,
   summarizeArm,
@@ -52,6 +54,7 @@ function passingMeasurements(n: number, taskIds: string[]): TaskMeasurement[] {
     latencyMs: 2,
     tokensUsed: null,
     executionPath: "deterministic",
+    modelUsed: null,
   }));
 }
 
@@ -66,6 +69,7 @@ describe("evolution/candidate REAL", () => {
         latencyMs: 2,
         tokensUsed: null,
         executionPath: "deterministic",
+        modelUsed: null,
       },
       {
         taskId: "arith-2",
@@ -75,6 +79,7 @@ describe("evolution/candidate REAL", () => {
         latencyMs: 3,
         tokensUsed: null,
         executionPath: "deterministic",
+        modelUsed: null,
       },
     ]);
     const genomeId = generateId();
@@ -83,6 +88,7 @@ describe("evolution/candidate REAL", () => {
       genomeId,
       suiteId: "arithmetic-format-v1",
       baseline,
+      suite: ARITHMETIC_FORMAT_SUITE_V1,
     });
     expect(candidate).not.toBeNull();
     expect(candidate?.genomeId).toBe(genomeId);
@@ -101,6 +107,7 @@ describe("evolution/candidate REAL", () => {
       genomeId: generateId(),
       suiteId: "arithmetic-format-v1",
       baseline,
+      suite: ARITHMETIC_FORMAT_SUITE_V1,
     });
     expect(candidate).toBeNull();
   });
@@ -360,5 +367,34 @@ describe("evolution/criterion REAL", () => {
     expect(formatComplianceCriterion(4, 4).pass).toBe(false);
     expect(formatComplianceCriterion('{"value": 5}', 4).pass).toBe(false);
     expect(formatComplianceCriterion("not json", 4).pass).toBe(false);
+  });
+});
+
+describe("evolution/gate token economics REAL", () => {
+  it("holds token increases beyond the proportional budget, passes within it", async () => {
+    const { decideGate: decide, summarizeArm } = await import("../experiment.js");
+    const mk = (quality: number, tokens: number) => {
+      const measurements = Array.from({ length: 10 }, (_, i) => ({
+        taskId: `t-${i}`,
+        success: true,
+        outputMatches: i < quality * 10,
+        verification: "validated",
+        latencyMs: 100,
+        tokensUsed: tokens,
+        executionPath: "model",
+        modelUsed: "m",
+      }));
+      return summarizeArm(measurements);
+    };
+    const { compareArms } = await import("../experiment.js");
+    const baseline = mk(0.4, 74); // 740 total
+    const pricey = mk(0.5, 90.5); // +165 total (+22%) → hold
+    const lean = mk(0.5, 80.9); // +69 total (+9.3%) → passes cost
+    const changes = { cognitionConfig: { systemPromptExtra: "Return ONLY valid JSON." } };
+    const priceyGate = decide({ baseline, candidate: pricey, deltas: compareArms(baseline, pricey), candidateChanges: changes });
+    expect(priceyGate.checks.find((c) => c.name === "cost-tokens")?.passed).toBe(false);
+    expect(priceyGate.decision).toBe("hold");
+    const leanGate = decide({ baseline, candidate: lean, deltas: compareArms(baseline, lean), candidateChanges: changes });
+    expect(leanGate.checks.find((c) => c.name === "cost-tokens")?.passed).toBe(true);
   });
 });

@@ -45,7 +45,7 @@ export {
 export * from "@seai/mind";
 
 // Import for SDK-specific exports
-import { MindRuntime, createMindRuntime, MindConfig, MindTemplate, DEFAULT_MIND_TEMPLATE, detectAndCreateMind, defaultStorePaths, getActiveGenome, loadGenomeSnapshot } from "@seai/mind";
+import { MindRuntime, createMindRuntime, MindConfig, MindTemplate, DEFAULT_MIND_TEMPLATE, detectAndCreateMind, defaultStorePaths, getActiveGenome, loadGenomeSnapshot, EXPERIMENT_SUITES } from "@seai/mind";
 import { IdentitySchema, VersionSchema, HardwareProfileSchema, type Identity, type Version, type HardwareProfile } from "@seai/core";
 import { generateId, nowISO } from "@seai/core";
 import { createTelemetry, type Telemetry } from "@seai/core";
@@ -161,9 +161,37 @@ export class SEAIClient {
     return result.value;
   }
 
-  async evolve(weakness: string): Promise<unknown> {
+  async evolve(
+    weakness: string,
+    opts?: { suiteId?: string; candidates?: string[]; enableModels?: boolean }
+  ): Promise<unknown> {
     if (!this.mind) throw new Error("Client not initialized");
-    const result = await this.mind.evolve(weakness);
+    if (opts?.enableModels) {
+      await this.enableLocalRuntimes();
+    }
+    const registration = opts?.suiteId
+      ? EXPERIMENT_SUITES[opts.suiteId]
+      : undefined;
+    if (opts?.suiteId && !registration) {
+      throw new Error(
+        `Unknown suite "${opts.suiteId}" (known: ${Object.keys(EXPERIMENT_SUITES).join(", ")})`
+      );
+    }
+    const specs = opts?.candidates?.map((name) => {
+      const all = Object.values(EXPERIMENT_SUITES).flatMap((r) => r.candidates);
+      const spec = all.find((s) => s.name === name);
+      if (!spec) {
+        throw new Error(
+          `Unknown candidate "${name}" (known: ${all.map((s) => s.name).join(", ")})`
+        );
+      }
+      return spec;
+    });
+    const result = await this.mind.evolve(weakness, {
+      suite: registration?.suite,
+      criterion: registration?.criterion,
+      candidates: specs ?? registration?.candidates,
+    });
     if (!result.ok) throw result.error;
     return result.value;
   }
