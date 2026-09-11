@@ -136,6 +136,8 @@ export class MemoryEngine {
 
     const entry: MemoryEntry = {
       id: generateId(),
+      // Ownership is set once at capture and is immutable afterwards.
+      mindId,
       type,
       content,
       embedding: options.embedding,
@@ -184,7 +186,10 @@ export class MemoryEngine {
       return Result.err(new Error("Privacy level insufficient for memory retrieval"));
     }
 
-    let memories = await this.repository.list({ mindId } as any, query.limit || 100, query.offset || 0);
+    // Enforce Mind scope: the caller's mindId always wins over query.mindId,
+    // and the repository filter uses the storage column (mind_id).
+    query.mindId = mindId;
+    let memories = await this.repository.list({ mind_id: mindId } as never, query.limit || 100, query.offset || 0);
     
     memories = this.applyQueryFilters(memories, query);
     memories = this.rankMemories(memories, query);
@@ -207,9 +212,18 @@ export class MemoryEngine {
     return Result.ok(memories);
   }
 
-  async getById(memoryId: string, context: SecurityContext): Promise<Result<MemoryEntry | null, Error>> {
+  async getById(
+    memoryId: string,
+    context: SecurityContext,
+    // When provided, the record must belong to this Mind; otherwise deny
+    // (fail closed). Direct-ID access does not bypass ownership.
+    mindId?: string
+  ): Promise<Result<MemoryEntry | null, Error>> {
     const memory = await this.repository.get(memoryId);
     if (!memory) return Result.ok(null);
+    if (mindId !== undefined && memory.mindId !== mindId) {
+      return Result.err(new Error("Memory access denied: record belongs to a different Mind"));
+    }
     
     const privacyCheck = this.securityEngine.checkPrivacy(context, "internal");
     if (!privacyCheck) {
@@ -222,11 +236,16 @@ export class MemoryEngine {
   async update(
     memoryId: string,
     updates: Partial<MemoryEntry>,
-    context: SecurityContext
+    context: SecurityContext,
+    // When provided, the record must belong to this Mind; otherwise deny.
+    mindId?: string
   ): Promise<Result<MemoryEntry, Error>> {
     const existing = await this.repository.get(memoryId);
     if (!existing) {
       return Result.err(new Error(`Memory not found: ${memoryId}`));
+    }
+    if (mindId !== undefined && existing.mindId !== mindId) {
+      return Result.err(new Error("Memory update denied: record belongs to a different Mind"));
     }
     
     const privacyCheck = this.securityEngine.checkPrivacy(context, "internal");
@@ -234,10 +253,12 @@ export class MemoryEngine {
       return Result.err(new Error("Privacy level insufficient for memory update"));
     }
 
+    // Ownership is immutable: even if updates contains mindId, the original wins.
     const updated: MemoryEntry = {
       ...existing,
       ...updates,
       id: existing.id,
+      mindId: existing.mindId,
       createdAt: existing.createdAt,
       updatedAt: nowISO(),
     };
@@ -254,10 +275,19 @@ export class MemoryEngine {
     return Result.ok(validated);
   }
 
-  async delete(memoryId: string, context: SecurityContext, hard: boolean = false): Promise<Result<boolean, Error>> {
+  async delete(
+    memoryId: string,
+    context: SecurityContext,
+    hard: boolean = false,
+    // When provided, the record must belong to this Mind; otherwise deny.
+    mindId?: string
+  ): Promise<Result<boolean, Error>> {
     const existing = await this.repository.get(memoryId);
     if (!existing) {
       return Result.err(new Error(`Memory not found: ${memoryId}`));
+    }
+    if (mindId !== undefined && existing.mindId !== mindId) {
+      return Result.err(new Error("Memory deletion denied: record belongs to a different Mind"));
     }
     
     const privacyCheck = this.securityEngine.checkPrivacy(context, "private");
@@ -293,10 +323,12 @@ export class MemoryEngine {
     };
 
     try {
-      const query: MemoryQuery = { state: "active" };
-      if (mindId) query.mindId = mindId;
-      
-      const memories = await this.repository.list(query as any, 10000);
+      // Scope to the Mind at the storage layer (column mind_id). State
+      // filtering happens in the loop below, as before.
+      const memories = await this.repository.list(
+        mindId ? ({ mind_id: mindId } as never) : ({} as never),
+        10000
+      );
       const now = Date.now();
 
       for (const memory of memories) {
@@ -350,10 +382,10 @@ export class MemoryEngine {
   }
 
   async getStats(mindId?: string): Promise<MemoryStats> {
-    const query: MemoryQuery = {};
-    if (mindId) query.mindId = mindId;
-    
-    const memories = await this.repository.list(query as any, 10000);
+    const memories = await this.repository.list(
+      mindId ? ({ mind_id: mindId } as never) : ({} as never),
+      10000
+    );
     
     const byType: Record<MemoryType, number> = {
       working: 0, episodic: 0, semantic: 0, procedural: 0,
@@ -401,8 +433,7 @@ export class MemoryEngine {
     limit: number = 10,
     threshold: number = 0.7
   ): Promise<MemoryEntry[]> {
-    const query: MemoryQuery = { mindId, limit: 1000 };
-    const memories = await this.repository.list(query as any, 1000);
+    const memories = await this.repository.list({ mind_id: mindId } as never, 1000);
     
     const scored = memories
       .filter(m => m.embedding && m.embedding.length === embedding.length)
@@ -431,6 +462,9 @@ export class MemoryEngine {
 
   private applyQueryFilters(memories: MemoryEntry[], query: MemoryQuery): MemoryEntry[] {
     return memories.filter(m => {
+      // Defense in depth: even if the storage layer returned a foreign row,
+      // the Mind scope is re-checked here.
+      if (query.mindId && m.mindId !== query.mindId) return false;
       if (query.type && m.type !== query.type) return false;
       if (query.state && m.state !== query.state) return false;
       if (query.minConfidence && m.confidence < query.minConfidence) return false;
@@ -471,7 +505,7 @@ export class MemoryEngine {
   private serialize(entry: MemoryEntry): Record<string, unknown> {
     return {
       id: entry.id,
-      mind_id: entry.metadata?.mindId || "",
+      mind_id: entry.mindId,
       type: entry.type,
       content: JSON.stringify(entry.content),
       embedding: entry.embedding ? JSON.stringify(entry.embedding) : null,
@@ -500,6 +534,7 @@ export class MemoryEngine {
 
     return {
       id: get<string>('id'),
+      mindId: get<string>('mind_id'),
       type: get<MemoryType>('type'),
       content: JSON.parse(get<string>('content')),
       embedding: getOpt<string>('embedding') ? JSON.parse(get<string>('embedding')) : undefined,

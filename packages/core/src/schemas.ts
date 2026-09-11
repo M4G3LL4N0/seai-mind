@@ -294,6 +294,9 @@ export type MemoryState = z.infer<typeof MemoryStateSchema>;
 
 export const MemoryEntrySchema = z.object({
   id: z.string().uuid(),
+  // Mind ownership boundary: every persisted memory record belongs to exactly one Mind.
+  // Required so retrieval paths can enforce isolation (Mind A can never read Mind B's memory).
+  mindId: z.string().min(1),
   type: MemoryTypeSchema,
   content: z.unknown(),
   embedding: z.array(z.number()).optional(),

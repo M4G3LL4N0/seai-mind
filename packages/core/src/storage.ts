@@ -104,36 +104,41 @@ class MemoryStorageImpl implements StorageAdapter {
     const table = tableMatch?.[1] || "unknown";
     const whereMatch = sql.match(/WHERE\s+(.+?)(?:\s+ORDER\s+BY|\s+LIMIT|$)/i);
     const whereClause = whereMatch?.[1] || "";
+    const isCount = /SELECT\s+COUNT\(\*\)/i.test(sql);
+    const hasLimitOffset = /LIMIT\s+\?\s+OFFSET\s+\?/i.test(sql);
     const self = this;
-    
+
+    const collectMatching = (params: unknown[]): Record<string, unknown>[] => {
+      const tableMap = self.tables.get(table);
+      if (!tableMap) return [];
+      const results: Record<string, unknown>[] = [];
+      for (const [, row] of tableMap) {
+        if (!whereClause || self.matchWhere(row, whereClause, params)) {
+          results.push(row);
+        }
+      }
+      return results;
+    };
+
+    const applyLimitOffset = (rows: Record<string, unknown>[], params: unknown[]): Record<string, unknown>[] => {
+      if (!hasLimitOffset || params.length < 2) return rows;
+      const limit = Number(params[params.length - 2]);
+      const offset = Number(params[params.length - 1]);
+      if (!Number.isFinite(limit) || !Number.isFinite(offset)) return rows;
+      return rows.slice(offset, offset + limit);
+    };
+
     return {
       run: () => ({ changes: 0, lastInsertRowid: 0n }),
       get: (...params: unknown[]) => {
-        const tableMap = self.tables.get(table);
-        if (!tableMap) return undefined;
-        
-        if (whereClause) {
-          for (const [id, row] of tableMap) {
-            if (self.matchWhere(row, whereClause, params)) {
-              return row;
-            }
-          }
-        } else {
-          return tableMap.values().next().value;
-        }
-        return undefined;
+        const rows = collectMatching(params);
+        if (isCount) return { count: rows.length };
+        return rows[0];
       },
       all: (...params: unknown[]) => {
-        const tableMap = self.tables.get(table);
-        if (!tableMap) return [];
-        
-        const results: Record<string, unknown>[] = [];
-        for (const [id, row] of tableMap) {
-          if (!whereClause || self.matchWhere(row, whereClause, params)) {
-            results.push(row);
-          }
-        }
-        return results;
+        const rows = collectMatching(params);
+        if (isCount) return [{ count: rows.length }];
+        return applyLimitOffset(rows, params);
       },
       iterate: function* (...params: unknown[]) {
         const tableMap = self.tables.get(table);
@@ -153,16 +158,23 @@ class MemoryStorageImpl implements StorageAdapter {
     const table = tableMatch?.[1] || "unknown";
     const whereMatch = sql.match(/WHERE\s+(.+?)(?:\s+ORDER\s+BY|\s+LIMIT|$)/i);
     const whereClause = whereMatch?.[1] || "";
+    // In `UPDATE t SET a = ?, b = ? WHERE id = ?` the WHERE params are the
+    // TRAILING params (after the SET values). Slice them so predicate
+    // matching compares the right values (previously params[0] — a SET
+    // value — was compared, so updates silently matched nothing).
+    const setMatch = sql.match(/SET\s+(.+?)\s+WHERE/i);
+    const setPlaceholders = (setMatch?.[1]?.match(/\?/g) || []).length;
     const self = this;
-    
+
     return {
       run: (...params: unknown[]) => {
         const tableMap = self.tables.get(table);
         if (!tableMap) return { changes: 0, lastInsertRowid: 0n };
-        
+        const whereParams = params.slice(setPlaceholders);
+
         let changes = 0;
         for (const [id, row] of tableMap) {
-          if (!whereClause || self.matchWhere(row, whereClause, params)) {
+          if (!whereClause || self.matchWhere(row, whereClause, whereParams)) {
             const updates = self.paramsToObject(sql, params);
             Object.assign(row, updates);
             changes++;
@@ -212,6 +224,20 @@ class MemoryStorageImpl implements StorageAdapter {
   }
 
   private paramsToObject(sql: string, params: unknown[]): Record<string, unknown> {
+    // UPDATE ... SET a = ?, b = ? WHERE ... → map leading params to SET columns.
+    // (Previously this fell through to the INSERT parser and returned {},
+    // so repository.update() silently persisted nothing.)
+    if (/^\s*UPDATE\b/i.test(sql)) {
+      const setMatch = sql.match(/SET\s+(.+?)\s+WHERE/i);
+      if (!setMatch?.[1]) return {};
+      const cols = setMatch[1].split(",").map((s) => s.trim().split(/\s*=\s*/)[0]).filter(Boolean) as string[];
+      const obj: Record<string, unknown> = {};
+      for (let i = 0; i < cols.length && i < params.length; i++) {
+        const col = cols[i];
+        if (col) obj[col] = params[i];
+      }
+      return obj;
+    }
     const columnsMatch = sql.match(/\(([^)]+)\)\s*VALUES/i);
     if (!columnsMatch || !columnsMatch[1]) return {};
     
@@ -226,10 +252,20 @@ class MemoryStorageImpl implements StorageAdapter {
     return obj;
   }
 
+  // Matches conjunctive equality predicates (`col = ? [AND col2 = ? ...]`)
+  // positionally against params. Unknown/unsupported predicates fail CLOSED
+  // (no match) so a repository filter can never silently degrade to match-all.
   private matchWhere(row: Record<string, unknown>, whereClause: string, params: unknown[]): boolean {
-    const idMatch = whereClause.match(/id\s*=\s*\?/i);
-    if (idMatch && params[0]) {
-      return row["id"] === params[0];
+    const trimmed = whereClause.trim();
+    if (!trimmed) return true;
+    const conditions = trimmed.split(/\s+AND\s+/i);
+    let paramIndex = 0;
+    for (const cond of conditions) {
+      const m = cond.trim().match(/^([\w.]+)\s*=\s*\?$/);
+      if (!m || !m[1]) return false;
+      const col = m[1];
+      const expected = params[paramIndex++];
+      if (row[col] !== expected) return false;
     }
     return true;
   }
