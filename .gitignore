@@ -6,6 +6,8 @@ out/
 *.tsbuildinfo
 .DS_Store
 *.log
+.env*
+coverage/
 data/
 *.sqlite
 *.db
