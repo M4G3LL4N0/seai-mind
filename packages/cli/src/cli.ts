@@ -17,7 +17,7 @@ import { EvaluationEngine } from "@seai/mind";
 import { EvolutionEngine } from "@seai/mind";
 import { createGenomeEngine, GenomeEngine } from "@seai/state";
 import { BenchmarkEngine } from "@seai/mind";
-import { MindRuntime, createMindRuntime, DEFAULT_MIND_TEMPLATE, MindConfig, MindTemplate, defaultStorePaths, getActiveGenome, readExperimentHistory, loadGenomeSnapshot, promoteInStore, rollbackInStore } from "@seai/mind";
+import { MindRuntime, createMindRuntime, DEFAULT_MIND_TEMPLATE, MindConfig, MindTemplate, defaultStorePaths, getActiveGenome, readExperimentHistory, loadGenomeSnapshot, promoteInStore, rollbackInStore, verifyHistoryIntegrity } from "@seai/mind";
 import { IdentitySchema, VersionSchema, type Identity, type Version } from "@seai/core";
 import chalk from "chalk";
 import ora from "ora";
@@ -219,6 +219,9 @@ evolveCmd
   .option("--suite <id>", "Suite: arithmetic-format-v1 (deterministic) or extraction-json-v1 (model-backed)", "arithmetic-format-v1")
   .option("--candidates <csv>", "Candidate configs (default: suite defaults)")
   .option("--models", "Enable locally reachable model runtimes first (needed for model-backed suites)")
+  .option("--repeat-runs <n>", "Run each task N times to measure per-task variance (default 1)", "1")
+  .option("--max-category-regression <fraction>", "Reject if any category regresses more than this fraction", "0.10")
+  .option("--variance-signal-to-noise <multiplier>", "Quality signal must exceed Nx pooled per-task variance", "2")
   .action(async (weakness, options) => {
     const spinner = ora("Running evolution experiment...").start();
 
@@ -238,6 +241,11 @@ evolveCmd
           ? String(options.candidates).split(",").map((s) => s.trim()).filter(Boolean)
           : undefined,
         enableModels: Boolean(options.models),
+        repeatRuns: Number(options.repeatRuns),
+        gateThresholds: {
+          maxCategoryRegression: Number(options.maxCategoryRegression),
+          varianceSignalToNoise: Number(options.varianceSignalToNoise),
+        },
       });
       const record = result as {
         experimentId: string;
@@ -248,6 +256,10 @@ evolveCmd
         reasons: string[];
         reproducibility: string;
         extraCandidates: Array<{ candidateId: string; quality: number; decision: string }>;
+        taskRuns?: number;
+        perTaskVariance?: number | null;
+        confidence?: string;
+        evidenceHash?: string;
       };
 
       spinner.succeed(`Experiment completed: ${String(record.decision).toUpperCase()}`);
@@ -259,6 +271,10 @@ evolveCmd
       console.log(`Experiment: ${record.experimentId}`);
       console.log(`Suite: ${record.suite}`);
       console.log(`Reproducibility: ${record.reproducibility}`);
+      if (record.taskRuns && record.taskRuns > 1) {
+        console.log(`Runs per task: ${record.taskRuns} (confidence: ${record.confidence}, per-task variance: ${(record.perTaskVariance ?? 0).toFixed(4)})`);
+      }
+      console.log(`Evidence hash: ${String(record.evidenceHash ?? "n/a").slice(0, 16)}...`);
       console.log(`\nBaseline quality: ${Number(record.baselineQuality).toFixed(2)}`);
       console.log(`Candidate quality: ${Number(record.candidateQuality).toFixed(2)}`);
       for (const extra of record.extraCandidates ?? []) {
@@ -337,6 +353,33 @@ evolveCmd
           `${record.promotion ? `promoted ${record.promotion.promotedGenomeId.slice(0, 8)}` : "not promoted"}  ` +
           `${record.rollback ? `rolled-back (${record.rollback.reason})` : ""}`
         );
+      }
+    } catch (error) {
+      console.error(chalk.red("Error:"), error);
+      process.exit(1);
+    }
+  });
+
+evolveCmd
+  .command("verify")
+  .description("Audit evolution store integrity: verify evidence hashes, report tampering")
+  .option("--mind <name>", "Mind name", "default")
+  .action(async (options) => {
+    try {
+      const paths = defaultStorePaths(options.mind);
+      const integrity = await verifyHistoryIntegrity(paths);
+      console.log("\n" + chalk.bold(`Evolution Store Integrity (Mind: ${options.mind})`));
+      console.log(chalk.gray("─".repeat(50)));
+      console.log(`Lines:        ${integrity.total}`);
+      console.log(`Verified:     ${integrity.verified} (signature matches measured evidence)`);
+      console.log(`Legacy:       ${integrity.unsigned} (pre-hash records, tolerated)`);
+      console.log(`Tampered:     ${integrity.tampered}`);
+      if (integrity.tampered > 0) {
+        console.log(chalk.red(`\nWARNING: ${integrity.tampered} line(s) failed evidence verification.`));
+        console.log(chalk.red("Every tampered line is excluded from history — never silently accepted."));
+        process.exitCode = 1;
+      } else {
+        console.log(chalk.green("\nStore integrity OK."));
       }
     } catch (error) {
       console.error(chalk.red("Error:"), error);

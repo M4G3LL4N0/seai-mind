@@ -50,13 +50,19 @@ import {
   type CandidateEvaluation,
   type CandidateSpec,
   type GateReport,
+  type GateThresholds,
   type OutputCriterion,
+  type ArmResult,
+  type ExperimentTask,
+  type HoldoutResults,
+  type ProtectedCategoryResult,
   appendExperimentRecord,
   defaultStorePaths,
   getActiveGenome,
   loadGenomeSnapshot,
   readExperimentHistory,
   setActiveGenome,
+  stampExperimentRecord,
   storeGenomeSnapshot,
   updateExperimentRecord,
   type ExperimentRecord,
@@ -348,6 +354,8 @@ export class MindRuntime {
       suite?: ExperimentSuite;
       criterion?: OutputCriterion;
       candidates?: CandidateSpec[];
+      repeatRuns?: number;
+      gateThresholds?: GateThresholds;
     }
   ): Promise<Result<any, Error>> {
     if (!this.taskContext) {
@@ -358,6 +366,8 @@ export class MindRuntime {
       storeBaseDir: opts?.storeBaseDir,
       criterion: opts?.criterion,
       candidates: opts?.candidates,
+      repeatRuns: opts?.repeatRuns,
+      gateThresholds: opts?.gateThresholds,
     });
     if (!result.ok) return result;
 
@@ -376,6 +386,10 @@ export class MindRuntime {
         quality: e.result.qualityRate,
         decision: e.gate.decision,
       })),
+      taskRuns: record.candidateResult.taskRuns,
+      perTaskVariance: record.candidateResult.perTaskVariance,
+      confidence: record.candidateResult.confidence,
+      evidenceHash: record.evidenceHash,
     });
   }
 
@@ -389,6 +403,12 @@ export class MindRuntime {
       criterion?: OutputCriterion;
       candidates?: CandidateSpec[];
       taskTimeoutMs?: number;
+      // Phase 9: run each task this many times. Enables per-task variance
+      // measurement and variance-confidence gating.
+      repeatRuns?: number;
+      // Phase 7: per-call gate thresholds; these OVERRIDE config thresholds
+      // for this experiment only.
+      gateThresholds?: GateThresholds;
     }
   ): Promise<Result<ExperimentRecord, Error>> {
     if (!this.taskContext) {
@@ -399,32 +419,79 @@ export class MindRuntime {
     const paths = defaultStorePaths(this.config.identity.name, opts?.storeBaseDir);
     const criterion = opts?.criterion ?? formatComplianceCriterion;
     const specs = opts?.candidates ?? [CANDIDATE_SPECS["json-format"] as CandidateSpec];
+    // Phase 7: explicit configurable thresholds; decideGate defaults fill gaps.
+    const configured = opts?.gateThresholds ?? this.config.evolution.gateThresholds ?? {};
+    const thresholds: GateThresholds = {
+      ...configured,
+      minQualityImprovement: configured.minQualityImprovement ?? this.config.evolution.minImprovementThreshold,
+    };
     this.telemetry.emitEvent(EventTypes.EVOLUTION_STARTED, "mind-runtime", {
       mindId: this.config.identity.id,
       suite: suite.id,
       tasks: suite.tasks.length,
       candidates: specs.map((s) => s.name),
+      repeatRuns: opts?.repeatRuns ?? 1,
     });
 
     try {
       const parent = await this.ensureBaselineGenome();
 
-      const measureWith = (sandbox: { cognition: CognitionEngine; taskContext: TaskContext }) =>
-        measureArm(
-          {
-            telemetry: this.telemetry,
-            cognition: sandbox.cognition,
-            mindId: this.config.identity.id,
-            taskContext: sandbox.taskContext,
-            taskTimeoutMs: opts?.taskTimeoutMs,
-          },
-          suite.tasks,
-          criterion
-        );
+      const evolutionTasks = suite.tasks.filter((t) => !t.holdout);
+      const holdoutTasks = suite.holdoutTasks ?? suite.tasks.filter((t) => t.holdout);
+      const protectedTasks = suite.tasks.filter((t) => t.protected);
 
-      // BASELINE arm: live cognition config, isolated sandbox storage.
-      const baselineSandbox = this.spawnSandbox(this.cognitionEngine.getConfig());
-      const baseline = await measureWith(baselineSandbox);
+      const repeatRuns = Math.max(1, opts?.repeatRuns ?? 1);
+      // Repeated-run variance is ONLY trustworthy if each run is an
+      // independent real execution. With enableCache the second run of a
+      // task returns the cached first run — a cache artifact, not measured
+      // variance — which would masquerade as "high confidence". So when the
+      // operator asks for repeated runs, experiment cognitions run caching off.
+      const experimentConfig =
+        repeatRuns > 1
+          ? { ...this.cognitionEngine.getConfig(), enableCache: false }
+          : this.cognitionEngine.getConfig();
+
+      // ============================================================
+      // STAGE 1: EVOLUTION-SET EVALUATION (baseline + candidates on the
+      // evolution task list). Holdout tasks are excluded — candidates never
+      // see them during measurement.
+      // ============================================================
+      const baselineSandbox = this.spawnSandbox(experimentConfig);
+      const baseline = await measureArm(
+        {
+          telemetry: this.telemetry,
+          cognition: baselineSandbox.cognition,
+          mindId: this.config.identity.id,
+          taskContext: baselineSandbox.taskContext,
+          taskTimeoutMs: opts?.taskTimeoutMs,
+          repeatRuns: opts?.repeatRuns,
+        },
+        evolutionTasks,
+        criterion
+      );
+
+      // Baseline holdout arm: shared Stage 2 evidence for every candidate.
+      const baselineHoldout =
+        holdoutTasks.length > 0
+          ? await measureArm(
+              {
+                telemetry: this.telemetry,
+                cognition: baselineSandbox.cognition,
+                mindId: this.config.identity.id,
+                taskContext: baselineSandbox.taskContext,
+                taskTimeoutMs: opts?.taskTimeoutMs,
+                repeatRuns: opts?.repeatRuns,
+              },
+              holdoutTasks,
+              criterion
+            )
+          : null;
+
+      // Baseline protected-category arms: shared Stage 2 evidence.
+      const baselineProtected =
+        protectedTasks.length > 0
+          ? await this.measureProtectedByCategory(protectedTasks, baselineSandbox, criterion, opts?.taskTimeoutMs)
+          : {};
 
       // CANDIDATES from measured evidence (none when nothing failed).
       const evaluated: CandidateEvaluation[] = [];
@@ -440,22 +507,147 @@ export class MindRuntime {
         });
         if (!candidate) continue;
         const sandbox = this.spawnSandbox({
-          ...this.cognitionEngine.getConfig(),
+          ...experimentConfig,
           ...((candidate.changes.cognitionConfig ?? {}) as Partial<CognitionConfig>),
         });
-        const result = await measureWith(sandbox);
+        const result = await measureArm(
+          {
+            telemetry: this.telemetry,
+            cognition: sandbox.cognition,
+            mindId: this.config.identity.id,
+            taskContext: sandbox.taskContext,
+            taskTimeoutMs: opts?.taskTimeoutMs,
+            repeatRuns: opts?.repeatRuns,
+          },
+          evolutionTasks,
+          criterion
+        );
         const deltas = compareArms(baseline, result);
         const gate = decideGate({
           baseline,
           candidate: result,
           deltas,
           candidateChanges: candidate.changes as Record<string, unknown>,
-          thresholds: { minQualityImprovement: this.config.evolution.minImprovementThreshold },
+          thresholds,
         });
         evaluated.push({ candidate, result, deltas, gate });
       }
 
-      const primary = evaluated[0];
+      // STAGE 1 GATE: If the primary candidate fails evolution-set
+      // evaluation, stop here — no protected/holdout evaluation is performed
+      // for a candidate that cannot clear the primary gate. Raw evidence is
+      // preserved in the record (identical workload invariant holds on reject).
+      const stage1Primary = evaluated[0];
+      if (stage1Primary && stage1Primary.gate.decision !== "eligible") {
+        const usesModelStage1 =
+          baseline.measurements.some((m) => m.executionPath === "model") ||
+          stage1Primary.result.measurements.some((m) => m.executionPath === "model");
+        const record: ExperimentRecord = {
+          id: generateId(),
+          mindId: this.config.identity.id,
+          suiteId: suite.id,
+          startedAt: nowISO(),
+          completedAt: nowISO(),
+          parentGenomeId: parent.id,
+          parentVersion: parent.version,
+          candidate: stage1Primary.candidate,
+          baseline,
+          candidateResult: stage1Primary.result,
+          deltas: stage1Primary.deltas,
+          gate: stage1Primary.gate,
+          extraCandidates: [],
+          sampling: { temperature: COGNITION_DEFAULT_TEMPERATURE },
+          reproducibility: usesModelStage1 ? "limited" : "full",
+          promotion: null,
+          rollback: null,
+          lineage: [...(parent.lineage ?? []), parent.id],
+        };
+        await storeGenomeSnapshot(paths, parent);
+        await appendExperimentRecord(paths, record);
+        return Result.ok(stampExperimentRecord(record));
+      }
+
+      // ============================================================
+      // STAGE 2: HOLDOUT + PROTECTED-CATEGORY EVALUATION
+      //   Only candidates that cleared the evolution-set gate proceed.
+      //   The FINAL gate re-checks evidence including holdout regression
+      //   and per-category protected regression.
+      // ============================================================
+      const stage2: CandidateEvaluation[] = [];
+      for (const candidateEval of evaluated) {
+        const candidateSandbox = this.spawnSandbox({
+          ...experimentConfig,
+          ...((candidateEval.candidate.changes.cognitionConfig ?? {}) as Partial<CognitionConfig>),
+        });
+        const candidateHoldout =
+          holdoutTasks.length > 0
+            ? await measureArm(
+                {
+                  telemetry: this.telemetry,
+                  cognition: candidateSandbox.cognition,
+                  mindId: this.config.identity.id,
+                  taskContext: candidateSandbox.taskContext,
+                  taskTimeoutMs: opts?.taskTimeoutMs,
+                  repeatRuns: opts?.repeatRuns,
+                },
+                holdoutTasks,
+                criterion
+              )
+            : null;
+        const candidateProtected =
+          protectedTasks.length > 0
+            ? await this.measureProtectedByCategory(protectedTasks, candidateSandbox, criterion, opts?.taskTimeoutMs)
+            : {};
+
+        const holdoutResults: HoldoutResults | undefined =
+          baselineHoldout && candidateHoldout
+            ? {
+                baselineQuality: baselineHoldout.qualityRate,
+                candidateQuality: candidateHoldout.qualityRate,
+                baselineSuccess: baselineHoldout.successRate,
+                candidateSuccess: candidateHoldout.successRate,
+              }
+            : undefined;
+
+        const protectedResults: Record<string, ProtectedCategoryResult> = {};
+        for (const [category, base] of Object.entries(baselineProtected)) {
+          protectedResults[category] = {
+            baselineSuccess: base.successRate,
+            candidateSuccess: candidateProtected[category]?.successRate ?? 0,
+          };
+        }
+
+        // Phase 6 target-vs-global: per-category regression evidence for ALL
+        // categories measured on the evolution set (protected categories
+        // included). Candidate regressing anywhere is a reject.
+        const categoryResults: Record<string, { baselineSuccessRate: number; candidateSuccessRate: number; count: number }> = {};
+        const allCategories = new Set([...Object.keys(baseline.byCategory), ...Object.keys(candidateEval.result.byCategory)]);
+        for (const category of allCategories) {
+          const baseRate = baseline.byCategory[category]?.successRate ?? 0;
+          const candRate = candidateEval.result.byCategory[category]?.successRate ?? 0;
+          const count = Math.max(baseline.byCategory[category]?.count ?? 0, candidateEval.result.byCategory[category]?.count ?? 0);
+          categoryResults[category] = { baselineSuccessRate: baseRate, candidateSuccessRate: candRate, count };
+        }
+
+        const gate = decideGate({
+          baseline,
+          candidate: candidateEval.result,
+          deltas: candidateEval.deltas,
+          candidateChanges: candidateEval.candidate.changes as Record<string, unknown>,
+          thresholds,
+          holdoutResults,
+          protectedResults: Object.keys(protectedResults).length > 0 ? protectedResults : undefined,
+          categoryResults: Object.keys(categoryResults).length > 0 ? categoryResults : undefined,
+        });
+        stage2.push({
+          candidate: candidateEval.candidate,
+          result: candidateEval.result,
+          deltas: candidateEval.deltas,
+          gate,
+        });
+      }
+
+      const primary = stage2.find((e) => e.gate.decision === "eligible") ?? stage2[0];
       const candidateResult = primary ? primary.result : summarizeEmptyArm();
       const deltas = primary ? primary.deltas : compareArms(baseline, summarizeEmptyArm());
       const gate = primary
@@ -467,7 +659,7 @@ export class MindRuntime {
           };
       const usesModel =
         baseline.measurements.some((m) => m.executionPath === "model") ||
-        evaluated.some((e) => e.result.measurements.some((m) => m.executionPath === "model"));
+        stage2.some((e) => e.result.measurements.some((m) => m.executionPath === "model"));
 
       const record: ExperimentRecord = {
         id: generateId(),
@@ -482,7 +674,7 @@ export class MindRuntime {
         candidateResult,
         deltas,
         gate,
-        extraCandidates: evaluated.slice(1),
+        extraCandidates: stage2.filter((e) => e !== primary),
         sampling: { temperature: COGNITION_DEFAULT_TEMPERATURE },
         reproducibility: usesModel ? "limited" : "full",
         promotion: null,
@@ -499,11 +691,11 @@ export class MindRuntime {
         baselineQuality: baseline.qualityRate,
         candidateQuality: candidateResult.qualityRate,
         decision: gate.decision,
-        candidates: evaluated.map((e) => ({ name: e.candidate.description, decision: e.gate.decision })),
+        candidates: stage2.map((e) => ({ name: e.candidate.description, decision: e.gate.decision })),
         reproducibility: record.reproducibility,
       });
 
-      return Result.ok(record);
+      return Result.ok(stampExperimentRecord(record));
     } catch (error) {
       return Result.err(error instanceof Error ? error : new Error(String(error)));
     }
@@ -774,6 +966,42 @@ export class MindRuntime {
     if (!experiment.ok) return experiment;
 
     return this.benchmarkEngine.runExperiment(experiment.value.id, this.config.identity.id, this.taskContext);
+  }
+
+  // ============================================================
+  // STAGE 2 HELPERS: Protected-category evaluation
+  // ============================================================
+
+  // Runs a task list grouped by category, returning one ArmResult per
+  // category. Used to detect per-category regression (protected skills).
+  private async measureProtectedByCategory(
+    tasks: ExperimentTask[],
+    arm: { cognition: CognitionEngine; taskContext: TaskContext },
+    criterion: OutputCriterion,
+    taskTimeoutMs?: number
+  ): Promise<Record<string, ArmResult>> {
+    const grouped = new Map<string, ExperimentTask[]>();
+    for (const task of tasks) {
+      if (!task.category) continue;
+      const list = grouped.get(task.category) ?? [];
+      list.push(task);
+      grouped.set(task.category, list);
+    }
+    const results: Record<string, ArmResult> = {};
+    for (const [category, list] of grouped) {
+      results[category] = await measureArm(
+        {
+          telemetry: this.telemetry,
+          cognition: arm.cognition,
+          mindId: this.config.identity.id,
+          taskContext: arm.taskContext,
+          taskTimeoutMs,
+        },
+        list,
+        criterion
+      );
+    }
+    return results;
   }
 
   getState(): MindState {

@@ -17,6 +17,7 @@
 
 import { mkdir, appendFile, readFile, writeFile, rename } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { createHash } from "node:crypto";
 import { generateId, nowISO, detectThreats, EventTypes } from "@seai/core";
 import { createTelemetry, type Telemetry } from "@seai/core";
 import type { EvolutionCandidate, Genome, Version } from "@seai/core";
@@ -40,12 +41,20 @@ export interface ExperimentTask {
   privacy?: string;
   allowedRuntimes?: string[];
   allowedModels?: string[];
+  // Protected capability flag (Phase 3): tasks in a protected category must
+  // never regress when a candidate is promoted.
+  protected?: boolean;
+  // Holdout flag (Phase 4): tasks excluded from candidate evolution-set
+  // evaluation; measured separately for generalization detection.
+  holdout?: boolean;
 }
 
 export interface ExperimentSuite {
   id: string;
   description: string;
   tasks: ExperimentTask[];
+  // Holdout tasks that candidates must NOT see during evolution/validation
+  holdoutTasks?: ExperimentTask[];
 }
 
 // Response-format compliance: tasks explicitly request JSON. The baseline
@@ -198,6 +207,16 @@ export interface TaskMeasurement {
   category?: string;
   error?: string;
   outputPreview?: string;
+  // Replication index when the task ran multiple times (repeatRuns > 1).
+  // Raw runs are preserved; aggregation never hides variance.
+  runIndex?: number;
+}
+
+// Per-category success summary (target-vs-global regression evidence).
+export interface CategoryRate {
+  count: number;
+  successCount: number;
+  successRate: number;
 }
 
 export interface ArmResult {
@@ -210,6 +229,15 @@ export interface ArmResult {
   meanLatencyMs: number | null;
   totalTokensKnown: number;
   tokensUnknown: number;
+  // Replications per task (1 = single shot; >= 2 = repeated execution).
+  taskRuns: number;
+  // Mean within-task success variance across tasks. Null when taskRuns < 2
+  // (no repeated evidence to compute it from — never zero-fabricated).
+  perTaskVariance: number | null;
+  // Small-N / variance confidence of the arm.
+  confidence: "high" | "medium" | "low" | "n/a";
+  // Per-category success rates, computed from raw measurements.
+  byCategory: Record<string, CategoryRate>;
 }
 
 export interface ComparisonDeltas {
@@ -241,6 +269,9 @@ export interface SandboxArmDeps {
   taskContext: TaskContext;
   taskTimeoutMs?: number;
   maxTasks?: number;
+  // Run each task this many times; raw runs are all preserved.
+  // Drives per-task variance measurement and variance-confidence gating.
+  repeatRuns?: number;
 }
 
 // Runs identical tasks through a REAL cognition engine inside a state
@@ -254,80 +285,137 @@ export async function measureArm(
 ): Promise<ArmResult> {
   const defaultTimeoutMs = deps.taskTimeoutMs ?? 10000;
   const capped = tasks.slice(0, deps.maxTasks ?? 50);
+  const taskRuns = Math.max(1, deps.repeatRuns ?? 1);
   const measurements: TaskMeasurement[] = [];
 
   for (const task of capped) {
-    // Per-task timeout from the task contract wins over the arm default.
-    const timeoutMs = task.timeoutMs ?? defaultTimeoutMs;
-    const start = Date.now();
-    try {
-      const res = await withTimeout(
-        deps.cognition.processTask(
-          { type: task.type, input: task.input } as never,
-          deps.taskContext
-        ),
-        timeoutMs,
-        `task ${task.id}`
-      );
-      const latencyMs = Date.now() - start;
-      if (!res.ok) {
+    for (let run = 0; run < taskRuns; run++) {
+      // Per-task timeout from the task contract wins over the arm default.
+      const timeoutMs = task.timeoutMs ?? defaultTimeoutMs;
+      const start = Date.now();
+      try {
+        const res = await withTimeout(
+          deps.cognition.processTask(
+            { type: task.type, input: task.input } as never,
+            deps.taskContext
+          ),
+          timeoutMs,
+          `task ${task.id}`
+        );
+        const latencyMs = Date.now() - start;
+        if (!res.ok) {
+          measurements.push({
+            taskId: task.id,
+            success: false,
+            outputMatches: null,
+            verification: "none",
+            latencyMs,
+            tokensUsed: null,
+            executionPath: "none",
+            modelUsed: null,
+            category: task.category,
+            error: String(res.error),
+            runIndex: taskRuns > 1 ? run : undefined,
+          });
+          continue;
+        }
+        const out = res.value.result;
+        const check = criterion(out, task.expected);
+        measurements.push({
+          taskId: task.id,
+          success: true,
+          outputMatches: check.pass,
+          verification: res.value.verification ?? "none",
+          latencyMs,
+          tokensUsed: typeof res.value.tokensUsed === "number" ? res.value.tokensUsed : null,
+          executionPath: res.value.executionPath ?? "unknown",
+          modelUsed: typeof res.value.modelUsed === "string" ? res.value.modelUsed : null,
+          category: task.category,
+          outputPreview: JSON.stringify(out)?.slice(0, 200),
+          runIndex: taskRuns > 1 ? run : undefined,
+        });
+      } catch (error) {
         measurements.push({
           taskId: task.id,
           success: false,
           outputMatches: null,
           verification: "none",
-          latencyMs,
+          latencyMs: Date.now() - start,
           tokensUsed: null,
           executionPath: "none",
           modelUsed: null,
           category: task.category,
-          error: String(res.error),
+          error: String(error),
+          runIndex: taskRuns > 1 ? run : undefined,
         });
-        continue;
       }
-      const out = res.value.result;
-      const check = criterion(out, task.expected);
-      measurements.push({
-        taskId: task.id,
-        success: true,
-        outputMatches: check.pass,
-        verification: res.value.verification ?? "none",
-        latencyMs,
-        tokensUsed: typeof res.value.tokensUsed === "number" ? res.value.tokensUsed : null,
-        executionPath: res.value.executionPath ?? "unknown",
-        modelUsed: typeof res.value.modelUsed === "string" ? res.value.modelUsed : null,
-        category: task.category,
-        outputPreview: JSON.stringify(out)?.slice(0, 200),
-      });
-    } catch (error) {
-      measurements.push({
-        taskId: task.id,
-        success: false,
-        outputMatches: null,
-        verification: "none",
-        latencyMs: Date.now() - start,
-        tokensUsed: null,
-        executionPath: "none",
-        modelUsed: null,
-        category: task.category,
-        error: String(error),
-      });
     }
   }
 
-  return summarizeArm(measurements);
+  return summarizeArm(measurements, taskRuns, capped.length);
 }
 
-export function summarizeArm(measurements: TaskMeasurement[]): ArmResult {
+export function summarizeArm(
+  measurements: TaskMeasurement[],
+  taskRuns = 1,
+  taskCount = measurements.length
+): ArmResult {
   const n = measurements.length;
   const successCount = measurements.filter((m) => m.success).length;
   const qualityCount = measurements.filter((m) => m.outputMatches === true).length;
   const verifiedCount = measurements.filter((m) => m.verification === "verified-deterministic").length;
   const latencies = measurements.map((m) => m.latencyMs);
   const tokensKnown = measurements.filter((m) => m.tokensUsed !== null) as Array<TaskMeasurement & { tokensUsed: number }>;
+
+  // Within-task success variance across replications (Bernoulli variance
+  // p*(1-p) where p is the task's observed success fraction). Only computed
+  // from real repeated runs — never guessed.
+  let perTaskVariance: number | null = null;
+  if (taskRuns >= 2 && measurements.length > 0) {
+    const byTask = new Map<string, { success: number; runs: number }>();
+    for (const m of measurements) {
+      const agg = byTask.get(m.taskId) ?? { success: 0, runs: 0 };
+      if (m.success) agg.success++;
+      agg.runs++;
+      byTask.set(m.taskId, agg);
+    }
+    let total = 0;
+    let count = 0;
+    for (const agg of byTask.values()) {
+      if (agg.runs < 2) continue;
+      const p = agg.success / agg.runs;
+      total += p * (1 - p);
+      count++;
+    }
+    perTaskVariance = count > 0 ? total / count : null;
+  }
+
+  // Small-N / variance confidence of this arm's evidence.
+  let confidence: ArmResult["confidence"] = "n/a";
+  if (taskRuns >= 2 && taskCount > 0 && taskCount < 3) {
+    confidence = "low"; // too few tasks for statistical power
+  } else if (taskRuns >= 2 && taskCount >= 3) {
+    const v = perTaskVariance ?? 0;
+    confidence = v < 0.05 ? "high" : v < 0.15 ? "medium" : "low";
+  }
+
+  // Per-category success rates for target-vs-global regression evidence.
+  const cat = new Map<string, { count: number; success: number }>();
+  for (const m of measurements) {
+    if (!m.category) continue;
+    const agg = cat.get(m.category) ?? { count: 0, success: 0 };
+    agg.count++;
+    if (m.success) agg.success++;
+    cat.set(m.category, agg);
+  }
+  const byCategory: Record<string, CategoryRate> = {};
+  for (const [k, v] of cat) {
+    byCategory[k] = { count: v.count, successCount: v.success, successRate: v.count > 0 ? v.success / v.count : 0 };
+  }
+
   return {
     measurements,
-    taskCount: n,
+    taskCount,
     successCount,
     successRate: n > 0 ? successCount / n : 0,
     qualityRate: n > 0 ? qualityCount / n : 0,
@@ -335,6 +423,10 @@ export function summarizeArm(measurements: TaskMeasurement[]): ArmResult {
     meanLatencyMs: n > 0 ? latencies.reduce((a, b) => a + b, 0) / n : null,
     totalTokensKnown: tokensKnown.reduce((a, m) => a + m.tokensUsed, 0),
     tokensUnknown: measurements.filter((m) => m.tokensUsed === null).length,
+    taskRuns,
+    perTaskVariance,
+    confidence,
+    byCategory,
   };
 }
 
@@ -353,6 +445,10 @@ export function summarizeEmptyArm(): ArmResult {
     meanLatencyMs: null,
     totalTokensKnown: 0,
     tokensUnknown: 0,
+    taskRuns: 1,
+    perTaskVariance: null,
+    confidence: "n/a",
+    byCategory: {},
   };
 }
 
@@ -477,6 +573,13 @@ export interface GateReport {
 export interface GateThresholds {
   minQualityImprovement?: number;
   maxLatencyIncreaseRatio?: number;
+  maxHoldoutRegression?: number; // maximum allowed regression on holdout tasks (fraction)
+  maxProtectedRegression?: number; // maximum allowed regression on protected categories (fraction)
+  // Phase 6: maximum allowed regression on ANY category (target-vs-global).
+  maxCategoryRegression?: number;
+  // Phase 10: quality signal must exceed pooled per-task variance by this
+  // multiplier before a noisy (high-variance) arm is eligible.
+  varianceSignalToNoise?: number;
 }
 
 const COGNITION_ALLOWLIST: Record<string, string[]> = {
@@ -558,12 +661,29 @@ export function reviewCandidateChanges(changes: Record<string, unknown>): GateCh
   return checks;
 }
 
+export interface HoldoutResults {
+  baselineQuality: number;
+  candidateQuality: number;
+  baselineSuccess: number;
+  candidateSuccess: number;
+}
+
+export interface ProtectedCategoryResult {
+  baselineSuccess: number;
+  candidateSuccess: number;
+}
+
 export function decideGate(input: {
   baseline: ArmResult;
   candidate: ArmResult;
   deltas: ComparisonDeltas;
   candidateChanges: Record<string, unknown>;
   thresholds?: GateThresholds;
+  holdoutResults?: HoldoutResults;
+  protectedResults?: Record<string, ProtectedCategoryResult>;
+  // Phase 6 target-vs-global: per-category regression evidence for ALL
+  // categories present in the workload (not just protected ones).
+  categoryResults?: Record<string, { baselineSuccessRate: number; candidateSuccessRate: number; count: number }>;
 }): GateReport {
   const minImprovement = input.thresholds?.minQualityImprovement ?? 0.05;
   const maxLatencyRatio = input.thresholds?.maxLatencyIncreaseRatio ?? 0.5;
@@ -711,6 +831,159 @@ export function decideGate(input: {
     severity: "reject",
   });
 
+  // 8. Holdout evaluation: candidate must not regress on holdout tasks
+  if (input.holdoutResults) {
+    const holdoutDelta = input.holdoutResults.candidateQuality - input.holdoutResults.baselineQuality;
+    const holdoutRegression = input.holdoutResults.baselineSuccess - input.holdoutResults.candidateSuccess;
+    const holdoutThreshold = input.thresholds?.maxHoldoutRegression ?? 0.05; // 5% max regression
+
+    if (holdoutDelta < -holdoutThreshold) {
+      checks.push({
+        name: "holdout-regression",
+        passed: false,
+        details: `Holdout quality regressed by ${(-holdoutDelta).toFixed(2)} (threshold ${holdoutThreshold})`,
+        severity: "reject",
+      });
+    } else if (holdoutRegression > 0) {
+      checks.push({
+        name: "holdout-regression",
+        passed: false,
+        details: `Holdout success rate regressed by ${holdoutRegression.toFixed(2)}`,
+        severity: "reject",
+      });
+    } else {
+      checks.push({
+        name: "holdout-regression",
+        passed: true,
+        details: holdoutDelta >= 0
+          ? `Holdout quality improved by ${holdoutDelta.toFixed(2)}`
+          : `Holdout quality change ${holdoutDelta.toFixed(2)} within threshold`,
+        severity: "hold",
+      });
+    }
+  }
+
+  // 9. Protected category regression checks
+  if (input.protectedResults) {
+    for (const [category, result] of Object.entries(input.protectedResults)) {
+      const regression = input.protectedResults[category].baselineSuccess - input.protectedResults[category].candidateSuccess;
+      if (regression > 0) {
+        checks.push({
+          name: `protected-${category}-regression`,
+          passed: false,
+          details: `Protected category ${category} regressed by ${regression.toFixed(2)}`,
+          severity: "reject",
+        });
+      } else {
+        checks.push({
+          name: `protected-${category}-regression`,
+          passed: true,
+          details: `Protected category ${category} maintained (delta: ${(-input.deltas.quality_delta).toFixed(2)})`,
+          severity: "hold",
+        });
+      }
+    }
+  }
+
+  // 10. Variance-confidence: repeated-run evidence must out-pace measurement
+  // noise before a candidate is eligible. Deterministic or single-run arms
+  // (perTaskVariance = null) are fully repeatable by construction.
+  if (input.baseline.perTaskVariance !== null || input.candidate.perTaskVariance !== null) {
+    const baseV = input.baseline.perTaskVariance;
+    const candV = input.candidate.perTaskVariance;
+    const signalToNoise = input.thresholds?.varianceSignalToNoise ?? 2;
+    if (baseV === null && candV === null) {
+      checks.push({
+        name: "variance-confidence",
+        passed: true,
+        details: "Determinate arms: variance claim not applicable",
+        severity: "hold",
+      });
+    } else if (baseV === null || candV === null) {
+      checks.push({
+        name: "variance-confidence",
+        passed: false,
+        details: "Variance measured on only one arm — insufficient to judge",
+        severity: "hold",
+      });
+    } else {
+      const pooled = Math.max(baseV, candV);
+      if (pooled === 0) {
+        checks.push({
+          name: "variance-confidence",
+          passed: true,
+          details: "Zero within-task variance: deterministic execution confirmed",
+          severity: "hold",
+        });
+      } else if (pooled < 0.05) {
+        checks.push({
+          name: "variance-confidence",
+          passed: true,
+          details: `Pooled per-task variance ${(pooled).toFixed(4)} within noise floor`,
+          severity: "hold",
+        });
+      } else {
+        const signal = Math.abs(input.deltas.quality_delta);
+        if (signal > pooled * signalToNoise) {
+          checks.push({
+            name: "variance-confidence",
+            passed: true,
+            details: `Quality signal ${signal.toFixed(3)} exceeds ${(signalToNoise)}x pooled variance ${pooled.toFixed(4)}`,
+            severity: "hold",
+          });
+        } else {
+          checks.push({
+            name: "variance-confidence",
+            passed: false,
+            details: `Quality signal ${signal.toFixed(3)} indistinguishable from noise (pooled variance ${pooled.toFixed(4)})`,
+            severity: "hold",
+          });
+        }
+      }
+    }
+  }
+
+  // 11. Small-N: too few tasks → low statistical power.
+  if (input.candidate.taskCount > 0 && input.candidate.taskCount < 3) {
+    checks.push({
+      name: "small-sample",
+      passed: false,
+      details: `Only ${input.candidate.taskCount} tasks measured — insufficient statistical power`,
+      severity: "hold",
+    });
+  }
+
+  // 12. Target-vs-global: candidate must not regress on ANY measured category
+  // (not just protected ones).
+  if (input.categoryResults) {
+    const maxCategoryRegression = input.thresholds?.maxCategoryRegression ?? 0.10;
+    for (const [category, r] of Object.entries(input.categoryResults)) {
+      const regression = r.baselineSuccessRate - r.candidateSuccessRate;
+      if (regression > maxCategoryRegression) {
+        checks.push({
+          name: `category-${category}-regression`,
+          passed: false,
+          details: `Category ${category} regressed by ${(regression).toFixed(2)} (threshold ${maxCategoryRegression})`,
+          severity: "reject",
+        });
+      } else if (regression > 0) {
+        checks.push({
+          name: `category-${category}-regression`,
+          passed: true,
+          details: `Category ${category} minor dip ${(regression).toFixed(2)} within threshold`,
+          severity: "hold",
+        });
+      } else {
+        checks.push({
+          name: `category-${category}-regression`,
+          passed: true,
+          details: `Category ${category} held or improved`,
+          severity: "hold",
+        });
+      }
+    }
+  }
+
   const rejected = checks.filter((c) => !c.passed && c.severity === "reject");
   const held = checks.filter((c) => !c.passed && c.severity === "hold");
   const decision: GateDecision = rejected.length > 0 ? "reject" : held.length > 0 ? "hold" : "eligible";
@@ -718,7 +991,7 @@ export function decideGate(input: {
   for (const c of held) reasons.push(`HOLD: ${c.name} — ${c.details}`);
   if (decision === "eligible") {
     reasons.push(
-      `ELIGIBLE: quality +${input.deltas.quality_delta.toFixed(2)}, success ${input.deltas.success_delta >= 0 ? "held" : "up"}, all safety/privacy/cost gates pass`
+      `ELIGIBLE: quality +${input.deltas.quality_delta.toFixed(2)}, success ${input.deltas.success_delta >= 0 ? "held" : "up"}, all safety/privacy/cost/holdout/protected gates pass`
     );
   }
   return { decision, reasons, checks };
@@ -821,6 +1094,12 @@ export interface ExperimentRecord {
   promotion: PromotionInfo | null;
   rollback: RollbackInfo | null;
   lineage: string[];
+  // Phase 12 evidence immutability: SHA-256 over the immutable measurement
+  // evidence (baseline/candidate/extra arms, deltas, decision). Lifecycle
+  // fields (promotion/rollback/lineage/timestamps) are excluded so a
+  // legitimately updated record still verifies, while ANY tampering with
+  // measured values is detected on read.
+  evidenceHash?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -847,6 +1126,45 @@ export function defaultStorePaths(
   };
 }
 
+// ---------------------------------------------------------------------------
+// Evidence immutability (Phase 12): SHA-256 over the immutable evidence
+// ---------------------------------------------------------------------------
+
+// Canonicalizes the measured evidence of a record into a stable string.
+// Lifecycle fields (promotion/rollback/lineage/timestamps) are deliberately
+// excluded so that legitimate lifecycle updates still verify, while ANY
+// tampering with measured values is detected.
+export function canonicalEvidence(record: ExperimentRecord): string {
+  const payload = {
+    suiteId: record.suiteId,
+    candidateId: record.candidate?.id ?? null,
+    baseline: record.baseline.measurements,
+    candidateResult: record.candidateResult.measurements,
+    extraCandidates: record.extraCandidates.map((e) => ({
+      candidateId: e.candidate.id,
+      measurements: e.result.measurements,
+    })),
+    deltas: record.deltas,
+    gate: { decision: record.gate.decision, checks: record.gate.checks },
+  };
+  return JSON.stringify(payload);
+}
+
+export function computeEvidenceHash(record: ExperimentRecord): string {
+  return createHash("sha256").update(canonicalEvidence(record)).digest("hex");
+}
+
+export function stampExperimentRecord(record: ExperimentRecord): ExperimentRecord {
+  if (typeof record.evidenceHash === "string" && record.evidenceHash.length > 0) return record;
+  return { ...record, evidenceHash: computeEvidenceHash(record) };
+}
+
+// Verifies the evidence hash. Returns null for unsigned (legacy) records.
+export function verifyEvidenceHash(record: ExperimentRecord): boolean | null {
+  if (typeof record.evidenceHash !== "string" || record.evidenceHash.length === 0) return null;
+  return computeEvidenceHash(record) === record.evidenceHash;
+}
+
 async function writeAtomic(file: string, content: string): Promise<void> {
   await mkdir(dirname(file), { recursive: true });
   const tmp = `${file}.${process.pid}.tmp`;
@@ -859,7 +1177,7 @@ export async function appendExperimentRecord(
   record: ExperimentRecord
 ): Promise<void> {
   await mkdir(paths.dir, { recursive: true });
-  await appendFile(paths.logFile, JSON.stringify(record) + "\n", "utf-8");
+  await appendFile(paths.logFile, JSON.stringify(stampExperimentRecord(record)) + "\n", "utf-8");
 }
 
 export async function updateExperimentRecord(
@@ -880,26 +1198,76 @@ export async function readExperimentHistory(paths: ExperimentStorePaths): Promis
   }
   const latest = new Map<string, ExperimentRecord>();
   let corrupt = 0;
+  let tampered = 0;
   for (const line of content.split("\n")) {
     const trimmed = line.trim();
     if (!trimmed) continue;
     try {
       const record = JSON.parse(trimmed) as ExperimentRecord;
-      if (record && typeof record.id === "string") latest.set(record.id, record);
-      else corrupt++;
+      if (record && typeof record.id === "string") {
+        // Evidence immutability: a line whose measurements were altered does
+        // not verify and is excluded — never silently accepted.
+        const valid = verifyEvidenceHash(record);
+        if (valid === false) {
+          tampered++;
+          continue;
+        }
+        latest.set(record.id, record);
+      } else corrupt++;
     } catch {
       corrupt++;
     }
   }
-  if (corrupt > 0) {
-    // Corrupt lines are skipped, never silently repaired; the count is
-    // surfaced through telemetry for operators to notice.
+  const integrityIssues = corrupt + tampered;
+  if (integrityIssues > 0) {
+    // Corrupt/tampered lines are skipped, never silently repaired; the count
+    // is surfaced through telemetry for operators to notice.
     createTelemetry({ enabled: false }).emitEvent(EventTypes.SECURITY_ALERT, "experiment-store", {
       action: "read-history",
       corruptLinesSkipped: corrupt,
+      tamperedLinesSkipped: tampered,
     });
   }
   return Array.from(latest.values()).sort((a, b) => a.startedAt.localeCompare(b.startedAt));
+}
+
+export function verifyHistoryIntegrity(paths: ExperimentStorePaths): Promise<{
+  total: number;
+  verified: number;
+  unsigned: number;
+  tampered: number;
+}> {
+  return (async () => {
+    let content: string;
+    try {
+      content = await readFile(paths.logFile, "utf-8");
+    } catch {
+      return { total: 0, verified: 0, unsigned: 0, tampered: 0 };
+    }
+    let total = 0;
+    let verified = 0;
+    let unsigned = 0;
+    let tampered = 0;
+    for (const line of content.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      total++;
+      try {
+        const record = JSON.parse(trimmed) as ExperimentRecord;
+        if (!record || typeof record.id !== "string") {
+          tampered++;
+          continue;
+        }
+        const valid = verifyEvidenceHash(record);
+        if (valid === null) unsigned++;
+        else if (valid) verified++;
+        else tampered++;
+      } catch {
+        tampered++;
+      }
+    }
+    return { total, verified, unsigned, tampered };
+  })();
 }
 
 export interface ActivePointer {

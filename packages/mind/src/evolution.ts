@@ -14,6 +14,7 @@ import { PolicyEngine, type PolicyContext } from "@seai/core";
 import { EvaluationEngine, type EvaluationResult } from "./evaluation.js";
 import { BenchmarkEngine } from "./benchmark.js";
 import { type BenchmarkResult } from "@seai/core";
+import type { GateThresholds } from "./experiment.js";
 
 export interface EvolutionConfig {
   maxConcurrentCandidates: number;
@@ -23,6 +24,9 @@ export interface EvolutionConfig {
   requirePrivacyReview: boolean;
   requireCostReview: boolean;
   autoPromote: boolean;
+  // Phase 7: explicit, configurable gate thresholds. Falls back to
+  // decideGate() defaults when absent.
+  gateThresholds?: GateThresholds;
 }
 
 const DEFAULT_CONFIG: EvolutionConfig = {

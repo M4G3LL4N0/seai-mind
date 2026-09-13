@@ -163,7 +163,17 @@ export class SEAIClient {
 
   async evolve(
     weakness: string,
-    opts?: { suiteId?: string; candidates?: string[]; enableModels?: boolean }
+    opts?: {
+      suiteId?: string;
+      candidates?: string[];
+      enableModels?: boolean;
+      repeatRuns?: number;
+      gateThresholds?: {
+        minQualityImprovement?: number;
+        maxCategoryRegression?: number;
+        varianceSignalToNoise?: number;
+      };
+    }
   ): Promise<unknown> {
     if (!this.mind) throw new Error("Client not initialized");
     if (opts?.enableModels) {
@@ -191,6 +201,8 @@ export class SEAIClient {
       suite: registration?.suite,
       criterion: registration?.criterion,
       candidates: specs ?? registration?.candidates,
+      repeatRuns: opts?.repeatRuns,
+      gateThresholds: opts?.gateThresholds,
     });
     if (!result.ok) throw result.error;
     return result.value;

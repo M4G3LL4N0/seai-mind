@@ -60,6 +60,32 @@ policy, routing policy, tool-selection policy, verification policy, then
 adapters → LoRA → distilled models → architecture. Each addition extends
 the allowlist and its tests, never the kernel shape.
 
+## Trustworthy Evolution (Phases 6-20, 2026-09-13)
+
+Repeatability and integrity on top of the measured loop:
+
+- **Repeated runs** (`repeatRuns: n`): each task is executed `n` times per
+  arm with `enableCache: false` — cached repeats are not measurements.
+  Every run is preserved as raw evidence (`runIndex`).
+- **Variance confidence:** per-task Bernoulli variance + `confidence`
+  (`high/medium/low/n/a`). `decideGate` holds signals that do not out-pace
+  `varianceSignalToNoise` × pooled variance, and `small-sample` holds at
+  < 3 tasks.
+- **Target-vs-global:** the gate rejects regression on ANY measured category
+  (`maxCategoryRegression`), not just protected ones.
+- **Evidence immutability:** every record is stamped with a SHA-256
+  `evidenceHash` over the measured evidence; reads verify signatures,
+  tampered lines are excluded, and `seai evolve verify` audits the store.
+- **Configurable thresholds:** `EvolutionConfig.gateThresholds` /
+  `runExperiment({ gateThresholds })` override `decideGate()` defaults.
+- **CLI:** `seai evolve propose --repeat-runs N --max-category-regression F
+  --variance-signal-to-noise X`, plus `seai evolve verify`.
+- **First trustworthy live result:** extraction suite at `repeat-runs 3`
+  measured 0.43 → 0.47 (+0.03) with +16.7% tokens → **HOLD, not promoted**,
+  signed evidence (`docs/research/TRUSTWORTHY_EVOLUTION_FIRST_EXPERIMENT.md`).
+  A prior cache-on run's ELIGIBLE 0.40 → 0.60 was a cache artifact; the
+  cache rule fixed it.
+
 ---
 
 *Evolution model verified 2026-09-11: 19 evolution tests green, full CLI loop demonstrated.*

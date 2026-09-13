@@ -242,6 +242,32 @@ export const ProviderLifecycleSchema = z.enum([
 
 export type ProviderLifecycle = z.infer<typeof ProviderLifecycleSchema>;
 
+// Evaluation set membership: tasks are assigned to exactly one set.
+// "holdout" tasks are never seen by evolution candidates.
+export const EvaluationSetSchema = z.enum([
+  "experience",
+  "evolution",
+  "validation",
+  "holdout",
+]);
+
+export type EvaluationSet = z.infer<typeof EvaluationSetSchema>;
+
+// Task categories drive protected-category regression detection.
+export const TaskCategorySchema = z.enum([
+  "extraction",
+  "formatting",
+  "classification",
+  "instruction_following",
+  "safety",
+  "privacy",
+  "memory",
+  "tool_use",
+  "generalization",
+]);
+
+export type TaskCategory = z.infer<typeof TaskCategorySchema>;
+
 export const TaskSchema = z.object({
   id: z.string().uuid(),
   type: z.string(),
@@ -269,6 +295,16 @@ export const TaskSchema = z.object({
   verification: z.enum(["verified-deterministic", "validated", "none"]).optional(),
   tokensUsed: z.number().int().nonnegative().optional(),
   latencyMs: z.number().int().nonnegative().optional(),
+  // Evaluation set membership (experience/evolution/validation/holdout)
+  evaluationSet: EvaluationSetSchema.optional(),
+  // Task category for protected/holdout tracking
+  category: TaskCategorySchema.optional(),
+  // Difficulty level for small-N confidence assessment
+  difficulty: z.enum(["trivial", "easy", "medium", "hard", "expert"]).optional(),
+  // Protected capability flag: must not regress on promotion
+  protected: z.boolean().optional(),
+  // Whether this task is in the holdout set
+  holdout: z.boolean().optional(),
 });
 
 export type Task = z.infer<typeof TaskSchema>;
