@@ -1,5 +1,18 @@
 # SE-AI Mind (Darwin 0.1) - AGENTS.md
 
+## North Star
+
+Read `docs/NORTHSTAR.md` first. It defines what SE-AI is (an open platform for
+persistent, measurable, governed, self-evolving AI Minds), the core loop
+(OBSERVE → … → ROLLBACK), the core thesis (intelligence should be optimized,
+not merely scaled), PAIOS as the first reference Mind, and the ten rules
+(truth over theater, evidence over claims, real capability over mock
+capability, governed evolution, privacy/security by default, provider-neutral,
+local-first, measurable improvement, reversible changes, no fake autonomy).
+Every subsystem, experiment, doc, and public-facing page must be judged
+against it. When the site and the code disagree, the code wins and the site
+is wrong.
+
 ## Architecture Overview
 
 SE-AI Mind is a pnpm monorepo (7 build units) with a 4-layer kernel.

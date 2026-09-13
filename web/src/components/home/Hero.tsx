@@ -2,7 +2,7 @@
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
-import { ArrowRight, Brain, Zap, GitBranch, ExternalLink, type LucideIcon } from "lucide-react";
+import { ArrowRight, Brain, Zap, GitBranch, FlaskConical, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 
@@ -25,7 +25,7 @@ export function FeatureCard({ icon: Icon, title, description, href, variant = "p
     >
       <div
         className={cn(
-          "relative p-6 rounded-2xl border transition-all duration-300",
+          "relative p-6 rounded-2xl border transition-all duration-300 flex h-full flex-col",
           variant === "primary"
             ? "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 hover:border-seai-300 dark:hover:border-seai-700 hover:shadow-lg"
             : "bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700",
@@ -86,38 +86,45 @@ export function Stat({ value, label, description, delay = 0 }: StatProps) {
   );
 }
 
+const journey = [
+  { title: "Model", desc: "a stateless call", arrow: "→", to: "Mind" },
+  { title: "Mind", desc: "a persistent system", arrow: "→", to: "Experience" },
+  { title: "Experience", desc: "measured outcomes", arrow: "→", to: "Evolution" },
+  { title: "Evolution", desc: "governed improvements", arrow: "→", to: "Better Mind" },
+];
+
 export function Hero() {
   const stats = [
-    { value: "27", label: "Core Packages", description: "Modular architecture" },
-    { value: "4", label: "Runtime Adapters", description: "Ollama, MLX, llama.cpp, Local" },
-    { value: "10", label: "Evolution Layers", description: "From prompts to architecture" },
-    { value: "0.1", label: "Darwin Version", description: "First generation" },
+    { value: "7", label: "Kernel Build Units", description: "core · runtime · state · mind · sdk · cli · web" },
+    { value: "105", label: "Tests Passing", description: "verified snapshot 2026-09-13" },
+    { value: "2", label: "Live Evolution Experiments", description: "measured & hash-signed" },
+    { value: "1", label: "Reference Mind", description: "PAIOS — Personal AI OS" },
   ];
 
   const features = [
     {
       icon: Brain,
       title: "Model ≠ Mind",
-      description: "A Mind combines model, memory, skills, tools, routing, evaluation, and evolution into a persistent system.",
-      href: "/architecture#model-vs-mind",
+      description: "A Mind is a persistent system — model, memory, skills, tools, identity, goals, evaluation, evolution, governance. Not a stateless call.",
+      href: "/what-is-seai",
     },
     {
       icon: Zap,
-      title: "Cheapest Inference is No Inference",
-      description: "Cognitive compiler checks cache, memory, skills, and tools before calling a model.",
-      href: "/architecture#cognitive-compiler",
+      title: "Optimized, Not Scaled",
+      description: "Cheapest inference is no inference: memory, skills, and tools before a model call. Intelligence should be optimized, not merely scaled.",
+      href: "/research/intelligence-efficiency",
     },
     {
       icon: GitBranch,
-      title: "Evolution with Guardrails",
-      description: "Sandbox → Benchmark → Security/Privacy/Cost Review → Human Approval → Promote/Rollback.",
-      href: "/architecture#evolution-engine",
+      title: "Governed Evolution",
+      description: "Observe → hypothesize → candidate → evaluate → gate → promote → monitor → rollback. Nothing promotes on noise; everything is reversible.",
+      href: "/evolution",
     },
     {
-      icon: Brain,
-      title: "Intelligence Efficiency",
-      description: "Metric: Verified Useful Outcome / (Compute + Memory + Latency + Energy + Cost)",
-      href: "/research#intelligence-efficiency",
+      icon: FlaskConical,
+      title: "Measured, Not Claimed",
+      description: "Deterministic criteria, raw per-task evidence, hash-signed records. Two live experiments so far — including a gate that refused to promote.",
+      href: "/evolution/live",
     },
   ];
 
@@ -125,7 +132,7 @@ export function Hero() {
     <section className="relative overflow-hidden py-28 lg:py-40">
       <div className="absolute inset-0 bg-gradient-to-br from-seai-50/50 via-white to-darwin-50/50 dark:from-slate-950 dark:via-slate-950 dark:to-slate-950" />
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-seai-100/50 via-transparent to-darwin-100/50 dark:from-seai-900/20 dark:via-transparent dark:to-darwin-900/20" />
-      
+
       <div className="container-wide relative">
         <motion.div
           initial={{ opacity: 0, y: 30 }}
@@ -139,36 +146,35 @@ export function Hero() {
             transition={{ duration: 0.5, delay: 0.2 }}
             className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-seai-100 text-seai-700 dark:bg-seai-900/50 dark:text-seai-300 text-sm font-medium mb-6"
           >
-            <span className="relative flex h-2 w-2">
+            <span className="relative flex h-2 w-2" aria-hidden="true">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-seai-400 opacity-75" />
               <span className="relative inline-flex rounded-full h-2 w-2 bg-seai-500" />
             </span>
-            SE-AI Mind — Darwin 0.1
+            SE-AI — Darwin 0.1
           </motion.span>
-          
+
           <motion.h1
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.3 }}
             className="text-5xl md:text-6xl lg:text-7xl font-bold text-slate-950 dark:text-white leading-tight mb-6"
           >
-            Build an AI that becomes{" "}
-            <span className="bg-gradient-to-r from-seai-600 via-darwin-500 to-seai-600 bg-clip-text text-transparent">
-              better at being yours
+            SE-AI
+            <span className="block mt-1 text-3xl md:text-4xl lg:text-5xl font-semibold bg-gradient-to-r from-seai-600 via-darwin-500 to-seai-600 bg-clip-text text-transparent">
+              Self-Evolving Artificial Intelligence
             </span>
-            .
           </motion.h1>
-          
+
           <motion.p
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.4 }}
             className="text-lg md:text-xl text-slate-600 dark:text-slate-300 max-w-2xl mx-auto mb-10 leading-relaxed"
           >
-            Open infrastructure for building persistent AI Minds that improve through governed experience. 
-            Intelligence should be optimized, not merely scaled.
+            An open platform for building persistent, specialized, measurable, governed, self-evolving AI Minds.
+            A Mind is model + memory + skills + tools + identity + goals + experience + evaluation + evolution + governance.
           </motion.p>
-          
+
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -176,16 +182,36 @@ export function Hero() {
             className="flex flex-col sm:flex-row items-center justify-center gap-4"
           >
             <Button size="xl" asChild>
-              <Link href="/command">Open Command Center</Link>
-            </Button>
-            <Button size="xl" variant="outline" asChild>
-              <Link href="/docs/getting-started">Get Started</Link>
-            </Button>
-            <Button size="xl" variant="ghost" asChild>
-              <Link href="https://github.com/seai-mind" target="_blank" rel="noopener noreferrer">
-                View on GitHub <ExternalLink className="h-4 w-4 ml-1" aria-hidden="true" />
+              <Link href="/docs/getting-started">
+                Build a Mind
+                <ArrowRight className="h-5 w-5 ml-2" aria-hidden="true" />
               </Link>
             </Button>
+            <Button size="xl" variant="outline" asChild>
+              <Link href="/architecture">Explore the Kernel</Link>
+            </Button>
+            <Button size="xl" variant="ghost" asChild>
+              <Link href="/evolution/live">Watch a Mind Evolve</Link>
+            </Button>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.6 }}
+            className="mt-12 flex flex-wrap items-center justify-center gap-2 text-sm text-slate-600 dark:text-slate-400"
+            aria-label="The path from model to mind"
+          >
+            {journey.map((step, i) => (
+              <span key={step.title} className="flex items-center gap-2">
+                <span className="rounded-full border border-slate-200 bg-white px-3 py-1 font-medium dark:border-slate-800 dark:bg-slate-900">
+                  {step.title}
+                </span>
+                {i < journey.length - 1 && (
+                  <ArrowRight className="h-4 w-4 text-seai-500" aria-hidden="true" />
+                )}
+              </span>
+            ))}
           </motion.div>
         </motion.div>
 

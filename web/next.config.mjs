@@ -15,6 +15,15 @@ const nextConfig = {
       },
     ],
   },
+  async redirects() {
+    return [
+      { source: "/command", destination: "/evolution/live", permanent: true },
+      { source: "/darwin", destination: "/roadmap", permanent: true },
+      { source: "/releases", destination: "/roadmap", permanent: true },
+      { source: "/paios", destination: "/minds/paios", permanent: true },
+      { source: "/test", destination: "/", permanent: true },
+    ];
+  },
   async headers() {
     return [
       {

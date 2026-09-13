@@ -5,6 +5,7 @@ import { ArrowRight, Github, BookOpen, Terminal, Brain, Zap, ExternalLink, type 
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { Button } from "@/components/ui/Button";
+import { site } from "@/lib/content";
 
 interface CTASectionProps {
   title?: string;
@@ -19,7 +20,7 @@ export function CTASection({
   description = "Clone the repository, run the doctor, and start evolving intelligence today.",
   primaryAction = { label: "Get Started", href: "/docs/getting-started", icon: ArrowRight },
   secondaryActions = [
-    { label: "View on GitHub", href: "https://github.com/seai-mind", icon: Github, variant: "outline" },
+    { label: "View on GitHub", href: site.github, icon: Github, variant: "outline" },
     { label: "Read the Docs", href: "/docs", icon: BookOpen, variant: "ghost" },
     { label: "Run Benchmarks", href: "/benchmarks", icon: Terminal, variant: "ghost" },
   ],

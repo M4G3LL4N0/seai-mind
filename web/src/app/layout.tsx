@@ -8,7 +8,7 @@ export const metadata: Metadata = {
     template: "%s | SE-AI Mind",
   },
   description:
-    "Open infrastructure for building persistent AI Minds that improve through governed experience. Build an AI that becomes better at being yours.",
+    "Open platform for building persistent, measurable, governed, self-evolving AI Minds. A Mind is Model + Memory + Skills + Tools + Identity + Goals + Experience + Evaluation + Evolution + Governance.",
   keywords: [
     "self-evolving AI",
     "self evolving artificial intelligence",
@@ -22,8 +22,8 @@ export const metadata: Metadata = {
     "AI evolution",
     "local AI",
   ],
-  authors: [{ name: "SE-AI Team" }],
-  creator: "SE-AI Team",
+  authors: [{ name: "SE-AI" }],
+  creator: "SE-AI",
   publisher: "SE-AI",
   formatDetection: {
     email: false,
@@ -35,26 +35,25 @@ export const metadata: Metadata = {
     type: "website",
     locale: "en_US",
     url: "https://seai.dev",
-    title: "SE-AI Mind — Self-Evolving Artificial Intelligence",
+    title: "SE-AI — Self-Evolving Artificial Intelligence",
     description:
-      "Open infrastructure for building persistent AI Minds that improve through governed experience.",
-    siteName: "SE-AI Mind",
+      "Open platform for building persistent AI Minds that improve through governed experience. Intelligence should be optimized, not merely scaled.",
+    siteName: "SE-AI",
     images: [
       {
         url: "/og-image.png",
         width: 1200,
         height: 630,
-        alt: "SE-AI Mind - Self-Evolving Artificial Intelligence",
+        alt: "SE-AI - Self-Evolving Artificial Intelligence",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "SE-AI Mind — Self-Evolving Artificial Intelligence",
+    title: "SE-AI — Self-Evolving Artificial Intelligence",
     description:
-      "Open infrastructure for building persistent AI Minds that improve through governed experience.",
+      "Open platform for building persistent AI Minds that improve through governed experience.",
     images: ["/og-image.png"],
-    creator: "@seai_mind",
   },
   robots: {
     index: true,
@@ -68,8 +67,8 @@ export const metadata: Metadata = {
     },
   },
   icons: {
-    icon: "/favicon.ico",
-    shortcut: "/favicon-16x16.png",
+    icon: "/favicon.svg",
+    shortcut: "/favicon.ico",
     apple: "/apple-touch-icon.png",
   },
   manifest: "/site.webmanifest",

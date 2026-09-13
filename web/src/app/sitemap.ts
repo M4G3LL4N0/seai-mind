@@ -1,84 +1,43 @@
-import { MetadataRoute } from 'next';
+import type { MetadataRoute } from "next";
+import { docSections, researchEntries, minds, experiments } from "@/lib/content";
+
+const baseUrl = "https://seai.dev";
+
+function route(path: string, priority = 0.7, changeFrequency: MetadataRoute.Sitemap[number]["changeFrequency"] = "weekly") {
+  return {
+    url: `${baseUrl}${path}`,
+    lastModified: new Date(),
+    changeFrequency,
+    priority,
+  };
+}
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  const baseUrl = 'https://seai.dev';
-  
   const staticPages = [
-    '',
-    '/darwin',
-    '/command',
-    '/architecture',
-    '/research',
-    '/benchmarks',
-    '/minds',
-    '/docs',
-    '/releases',
-    '/docs/getting-started',
-    '/docs/quickstart',
-    '/docs/configuration',
-    '/docs/doctor',
-    '/minds/paios',
-  ].map((path) => ({
-    url: `${baseUrl}${path}`,
-    lastModified: new Date(),
-    changeFrequency: 'weekly' as const,
-    priority: path === '' ? 1 : 0.8,
-  }));
+    route("", 1),
+    route("/what-is-seai"),
+    route("/architecture"),
+    route("/evolution", 0.8),
+    route("/evolution/live", 0.8),
+    route("/minds"),
+    route("/research"),
+    route("/benchmarks", 0.8),
+    route("/docs", 0.8),
+    route("/roadmap"),
+    route("/privacy", 0.3, "yearly"),
+    route("/security", 0.3, "yearly"),
+    route("/license", 0.3, "yearly"),
+  ];
 
-  const docPages = [
-    '/docs/concepts/model-vs-mind',
-    '/docs/concepts/compiler',
-    '/docs/concepts/evolution',
-    '/docs/concepts/efficiency',
-    '/docs/concepts/privacy',
-    '/docs/minds/spec',
-    '/docs/minds/lifecycle',
-    '/docs/minds/paios',
-    '/docs/minds/custom',
-    '/docs/memory/types',
-    '/docs/memory/lifecycle',
-    '/docs/memory/consolidation',
-    '/docs/memory/retrieval',
-    '/docs/skills/anatomy',
-    '/docs/skills/builtin',
-    '/docs/skills/composition',
-    '/docs/skills/custom',
-    '/docs/skills/validation',
-    '/docs/tools/capabilities',
-    '/docs/tools/toolchains',
-    '/docs/tools/sandboxing',
-    '/docs/tools/custom',
-    '/docs/models/registry',
-    '/docs/models/runtimes',
-    '/docs/models/routing',
-    '/docs/models/providers',
-    '/docs/models/hardware',
-    '/docs/evolution/layers',
-    '/docs/evolution/generation',
-    '/docs/evolution/sandbox',
-    '/docs/evolution/promotion',
-    '/docs/evolution/rollback',
-    '/docs/genome/schema',
-    '/docs/genome/diff',
-    '/docs/genome/rollback',
-    '/docs/genome/branching',
-    '/docs/benchmark/suite',
-    '/docs/benchmark/experiments',
-    '/docs/benchmark/metrics',
-    '/docs/benchmark/reproducibility',
-    '/docs/security/threats',
-    '/docs/security/permissions',
-    '/docs/security/privacy',
-    '/docs/security/audit',
-    '/docs/sdk/typescript',
-    '/docs/cli/reference',
-    '/docs/sdk/plugins',
-  ].map((path) => ({
-    url: `${baseUrl}${path}`,
-    lastModified: new Date(),
-    changeFrequency: 'monthly' as const,
-    priority: 0.6,
-  }));
+  const mindPages = minds.map((m) => route(`/minds/${m.slug}`, 0.6));
 
-  return [...staticPages, ...docPages];
+  const researchPages = researchEntries.map((e) => route(`/research/${e.slug}`, 0.6));
+
+  const experimentPages = experiments.map((e) => route(`/benchmarks/${e.slug}`, 0.6));
+
+  const docPages = docSections.flatMap((group) =>
+    group.docs.map((d) => route(d.href, 0.6, "monthly")),
+  );
+
+  return [...staticPages, ...mindPages, ...researchPages, ...experimentPages, ...docPages];
 }
