@@ -254,6 +254,8 @@ export const EvaluationSetSchema = z.enum([
 export type EvaluationSet = z.infer<typeof EvaluationSetSchema>;
 
 // Task categories drive protected-category regression detection.
+// Values are additive only: never remove a category once it exists in a suite
+// or an experiment record, or history integrity across versions will break.
 export const TaskCategorySchema = z.enum([
   "extraction",
   "formatting",
@@ -262,11 +264,37 @@ export const TaskCategorySchema = z.enum([
   "safety",
   "privacy",
   "memory",
+  "memory_retrieval",
   "tool_use",
   "generalization",
+  "reasoning",
+  "structured_output",
+  "coding",
+  "policy",
+  "robustness",
 ]);
 
 export type TaskCategory = z.infer<typeof TaskCategorySchema>;
+
+// Documented category catalogue used by CLI/docs output. Mirrors
+// TaskCategorySchema exactly; keep in sync when extending.
+export const DOCUMENTED_TASK_CATEGORIES: ReadonlyArray<{ value: TaskCategory; description: string }> = [
+  { value: "extraction", description: "Pull structured fields out of unstructured input" },
+  { value: "formatting", description: "Produce output in a defined shape/format" },
+  { value: "classification", description: "Assign input to a discrete class" },
+  { value: "instruction_following", description: "Comply with explicit instructions" },
+  { value: "safety", description: "Refuse or handle unsafe requests; harm avoidance" },
+  { value: "privacy", description: "Never leak protected data across privacy levels" },
+  { value: "memory", description: "Recall previously stored experience" },
+  { value: "memory_retrieval", description: "Retrieve the correct stored item from memory" },
+  { value: "tool_use", description: "Select and invoke the right tool for the task" },
+  { value: "generalization", description: "Apply learned behavior to unseen variants" },
+  { value: "reasoning", description: "Multi-step logical or math reasoning" },
+  { value: "structured_output", description: "Emit machine-parseable structured output" },
+  { value: "coding", description: "Generate or transform source code" },
+  { value: "policy", description: "Comply with a formal policy or rule set" },
+  { value: "robustness", description: "Stay correct under adversarial or noisy input" },
+];
 
 export const TaskSchema = z.object({
   id: z.string().uuid(),

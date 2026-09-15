@@ -20,7 +20,7 @@ import { dirname, join } from "node:path";
 import { createHash } from "node:crypto";
 import { generateId, nowISO, detectThreats, EventTypes } from "@seai/core";
 import { createTelemetry, type Telemetry } from "@seai/core";
-import type { EvolutionCandidate, Genome, Version } from "@seai/core";
+import type { EvolutionCandidate, Genome, Version, TaskCategory } from "@seai/core";
 import type { CognitionEngine, CognitionConfig, TaskContext } from "./cognition.js";
 
 // ---------------------------------------------------------------------------
@@ -55,6 +55,9 @@ export interface ExperimentSuite {
   tasks: ExperimentTask[];
   // Holdout tasks that candidates must NOT see during evolution/validation
   holdoutTasks?: ExperimentTask[];
+  // Validation tasks: fixed set outside evolution arms, tests whether gains
+  // transfer to tasks the candidate had reason to do well on.
+  validationTasks?: ExperimentTask[];
 }
 
 // Response-format compliance: tasks explicitly request JSON. The baseline
@@ -661,6 +664,270 @@ export function reviewCandidateChanges(changes: Record<string, unknown>): GateCh
   return checks;
 }
 
+// ---------------------------------------------------------------------------
+// Dataset roles + suite versioning (Phase 3-5)
+// ---------------------------------------------------------------------------
+
+export type ExperimentDatasetRole = "evolution" | "validation" | "holdout";
+
+export interface SuiteVersion {
+  suiteId: string;
+  version: string;
+  releasedAt: string;
+  // Hash over candidate-visible work (evolution+validation), answers EXCLUDED.
+  // Changed answers never silently rebind prior evidence.
+  taskSetHash: string;
+  // Hash over holdout set WITH answers -> integrity binding.
+  holdoutHash: string | null;
+  // Hash over ENTIRE suite (all tasks, answers included).
+  contentHash: string;
+  // Evaluator contract identity (versioned, not a hash).
+  evaluator: string;
+}
+
+// Canonical task representation for hashing. `includeAnswers` excludes/excludes
+// answers appropriately:
+//   - taskSetHash (evolution+validation): EXCLUDES `expected`/`holdout`/`protected`
+//     so answer changes don't rebind candidate optimization.
+//   - contentHash/holdoutHash: INCLUDES answers for integrity binding.
+export function canonicalTaskRepr(task: ExperimentTask, includeAnswers = false): string {
+  const payload: Record<string, unknown> = {};
+  const taskRecord = task as unknown as Record<string, unknown>;
+  const keys = Object.keys(taskRecord).sort();
+  for (const key of keys) {
+    if (!includeAnswers && (key === "expected" || key === "holdout" || key === "protected")) continue;
+    payload[key] = taskRecord[key];
+  }
+  return JSON.stringify(payload);
+}
+
+export function hashExperimentTasks(tasks: ExperimentTask[], includeAnswers = false, algorithm: "sha256" = "sha256"): string {
+  const canonical = tasks.map((t) => canonicalTaskRepr(t, includeAnswers)).sort().join("\u0000");
+  return createHash(algorithm).update(canonical).digest("hex");
+}
+
+// Deterministic role resolution. A task may NOT appear in multiple roles.
+export function resolveSuiteRoles(suite: ExperimentSuite): {
+  evolution: ExperimentTask[];
+  validation: ExperimentTask[];
+  holdout: ExperimentTask[];
+} {
+  const holdout = [...(suite.holdoutTasks ?? [])];
+  const explicitHoldout = new Set(holdout.map((t) => t.id));
+  const explicitValidation = new Set(
+    (suite.validationTasks ?? []).map((t) => t.id)
+  );
+  const seen = new Set<string>();
+  const claim = (task: ExperimentTask, role: ExperimentDatasetRole, bucket: ExperimentTask[]) => {
+    if (seen.has(task.id)) {
+      throw new Error(
+        `Suite ${suite.id}: task ${task.id} claimed by multiple dataset roles — ` +
+          `roles are exclusive to prevent evidence double-counting`
+      );
+    }
+    seen.add(task.id);
+    bucket.push(task);
+  };
+  const evolution: ExperimentTask[] = [];
+  const validation: ExperimentTask[] = [];
+
+  for (const task of suite.tasks) {
+    if (explicitHoldout.has(task.id) || task.holdout) {
+      claim(task, "holdout", holdout);
+    } else if (explicitValidation.has(task.id)) {
+      claim(task, "validation", validation);
+    } else {
+      claim(task, "evolution", evolution);
+    }
+  }
+  return { evolution, validation, holdout };
+}
+
+export function computeSuiteVersion(suite: ExperimentSuite, evaluator = "contract-v1"): SuiteVersion {
+  const { evolution, validation, holdout } = resolveSuiteRoles(suite);
+  const candidateVisible = [...evolution, ...validation];
+  return {
+    suiteId: suite.id,
+    version: hashExperimentTasks(candidateVisible, false).slice(0, 12),
+    releasedAt: nowISO(),
+    taskSetHash: hashExperimentTasks(candidateVisible, false),
+    holdoutHash: holdout.length > 0 ? hashExperimentTasks(holdout, true) : null,
+    contentHash: hashExperimentTasks([...suite.tasks, ...(suite.holdoutTasks ?? [])], true),
+    evaluator,
+  };
+}
+
+// Full role resolution with metadata for inspection.
+export interface ResolvedSuiteRoles {
+  evolution: ExperimentTask[];
+  validation: ExperimentTask[];
+  holdout: ExperimentTask[];
+  // Evolution + validation + holdout, each task annotated with its role.
+  all: Array<ExperimentTask & { datasetRole: ExperimentDatasetRole }>;
+  // Protected categories present in the suite (target evidence for regression checks).
+  protectedCategories: Array<{ categoryId: TaskCategory; count: number }>;
+}
+
+// ---------------------------------------------------------------------------
+// Regression matrix (Phase 4: protected-category target-vs-global)
+// ---------------------------------------------------------------------------
+
+export type CategoryRegressionPolicy = "no-regression" | "bounded" | "required-gain" | "informational";
+
+export interface RegressionMatrixRow {
+  categoryId: TaskCategory;
+  baselineSuccessRate: number;
+  candidateSuccessRate: number;
+  count: number;
+  policy: CategoryRegressionPolicy;
+  // Positive means candidate > baseline (improvement).
+  delta: number;
+  // Regression threshold; FAIL if delta < -threshold.
+  threshold: number;
+  // Evidence level (MEASURED, VERIFIED, etc.) for this category's metrics.
+  evidenceLevel: "MEASURED" | "VERIFIED" | "PRODUCTION";
+}
+
+export interface RegressionMatrix {
+  rows: RegressionMatrixRow[];
+  // Total success rate across all categories (weighted average).
+  aggregateSuccessRate: number;
+}
+
+export const DEFAULT_REGRESSION_POLICIES: Record<TaskCategory, CategoryRegressionPolicy> = {
+  extraction: "no-regression",
+  formatting: "no-regression",
+  classification: "no-regression",
+  instruction_following: "no-regression",
+  safety: "no-regression",
+  privacy: "no-regression",
+  memory: "bounded",
+  memory_retrieval: "informational",
+  tool_use: "bounded",
+  generalization: "bounded",
+  reasoning: "bounded",
+  structured_output: "bounded",
+  coding: "bounded",
+  policy: "no-regression",
+  robustness: "no-regression",
+};
+
+export function buildRegressionMatrix(
+  input: {
+    baseline: ArmResult;
+    candidate: ArmResult;
+    categories: TaskCategory[];
+    policies?: Record<TaskCategory, CategoryRegressionPolicy>;
+  }
+): RegressionMatrix {
+  const { baseline, candidate, categories, policies = DEFAULT_REGRESSION_POLICIES } = input;
+  const rows: RegressionMatrixRow[] = [];
+  let totalWeighted = 0;
+  let totalWeight = 0;
+  for (const cat of categories) {
+    const b = baseline.byCategory?.[cat]?.successRate ?? 0;
+    const c = candidate.byCategory?.[cat]?.successRate ?? 0;
+    const count = (baseline.byCategory?.[cat]?.count ?? 0) + (candidate.byCategory?.[cat]?.count ?? 0);
+    const policy = policies[cat] ?? "no-regression";
+    const threshold = policy === "no-regression" ? 0 : policy === "required-gain" ? 0.05 : 0.02;
+    const delta = c - b;
+    rows.push({
+      categoryId: cat,
+      baselineSuccessRate: b,
+      candidateSuccessRate: c,
+      count,
+      policy,
+      delta,
+      threshold,
+      evidenceLevel: "MEASURED",
+    });
+    totalWeighted += delta * count;
+    totalWeight += count;
+  }
+  return {
+    rows,
+    aggregateSuccessRate: totalWeight > 0 ? totalWeighted / totalWeight : 0,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Generalization gate (Phase 5: holdout evidence gate)
+// ---------------------------------------------------------------------------
+
+export type GeneralizationGateResult = "PASS" | "HOLD" | "FAIL";
+
+export interface GeneralizationEvidence {
+  // Holdout success rate (candidate on inviolate set, WITH answers).
+  holdoutSuccessRate: number;
+  // Minimum holdout tasks required to PASS.
+  minHoldoutTasks: number;
+  // Required holdout delta (candidate - baseline) for PASS.
+  requiredHoldoutDelta: number;
+  // Minimum evidence level (VERIFIED, etc.).
+  minEvidenceLevel: "MEASURED" | "VERIFIED";
+}
+
+export interface GeneralizationMetrics {
+  // Raw holdout delta.
+  holdoutDelta: number;
+  // Whether the candidate beat baseline on holdout.
+  beatBaseline: boolean;
+  // Whether delta meets required threshold.
+  meetsThreshold: boolean;
+  // Whether holdout confidence is sufficient (enough tasks scored).
+  sufficientHoldout: boolean;
+}
+
+export function computeGeneralizationMetrics(evidence: GeneralizationEvidence): GeneralizationMetrics {
+  const holdoutDelta = evidence.holdoutSuccessRate - 0; // baseline assumed 0 for now
+  const meetsThreshold = holdoutDelta >= evidence.requiredHoldoutDelta;
+  const sufficientHoldout = evidence.holdoutSuccessRate > 0 || evidence.minHoldoutTasks === 0;
+  return {
+    holdoutDelta,
+    beatBaseline: holdoutDelta > 0,
+    meetsThreshold,
+    sufficientHoldout,
+  };
+}
+
+export interface GeneralizationGateInput {
+  baselineHoldoutSuccessRate: number;
+  candidateHoldoutEvidence: { successRate: number; count: number; evidenceLevel: "MEASURED" | "VERIFIED" | "PRODUCTION" };
+  minHoldoutTasks?: number;
+  requiredHoldoutDelta?: number;
+  minEvidenceLevel?: "MEASURED" | "VERIFIED";
+}
+
+// Decide generalization gate: PASS (proven generalization), HOLD (insufficient evidence),
+// FAIL (regression detected on holdout).
+export function decideGeneralizationGate(input: GeneralizationGateInput): GeneralizationGateResult {
+  const {
+    baselineHoldoutSuccessRate,
+    candidateHoldoutEvidence,
+    minHoldoutTasks = 3,
+    requiredHoldoutDelta = 0.05,
+    minEvidenceLevel = "MEASURED",
+  } = input;
+  if (candidateHoldoutEvidence.evidenceLevel !== minEvidenceLevel) {
+    return "HOLD";
+  }
+  if (candidateHoldoutEvidence.count < minHoldoutTasks) {
+    return "HOLD";
+  }
+  const delta = candidateHoldoutEvidence.successRate - baselineHoldoutSuccessRate;
+  if (delta < -requiredHoldoutDelta) {
+    return "FAIL";
+  }
+  if (delta >= requiredHoldoutDelta) {
+    return "PASS";
+  }
+  return "HOLD";
+}
+
+// ---------------------------------------------------------------------------
+// Holdout results (Phase 1 baseline, unchanged)
+// ---------------------------------------------------------------------------
+
 export interface HoldoutResults {
   baselineQuality: number;
   candidateQuality: number;
@@ -668,9 +935,10 @@ export interface HoldoutResults {
   candidateSuccess: number;
 }
 
+// Per-category protected regression result (Phase 3).
 export interface ProtectedCategoryResult {
-  baselineSuccess: number;
-  candidateSuccess: number;
+  baselineSuccessRate: number;
+  candidateSuccessRate: number;
 }
 
 export function decideGate(input: {
@@ -866,7 +1134,7 @@ export function decideGate(input: {
   // 9. Protected category regression checks
   if (input.protectedResults) {
     for (const [category, result] of Object.entries(input.protectedResults)) {
-      const regression = input.protectedResults[category].baselineSuccess - input.protectedResults[category].candidateSuccess;
+      const regression = input.protectedResults[category].baselineSuccessRate - input.protectedResults[category].candidateSuccessRate;
       if (regression > 0) {
         checks.push({
           name: `protected-${category}-regression`,
@@ -1094,6 +1362,11 @@ export interface ExperimentRecord {
   promotion: PromotionInfo | null;
   rollback: RollbackInfo | null;
   lineage: string[];
+  // Phase 13: suite version (taskSetHash/holdoutHash/contentHash) binds
+  // evidence to the exact task set. When present, changed holdout content
+  // invalidates prior evidence binding. Omitted for legacy records so their
+  // hashes remain stable (JSON.stringify drops undefined keys).
+  suiteVersion?: SuiteVersion;
   // Phase 12 evidence immutability: SHA-256 over the immutable measurement
   // evidence (baseline/candidate/extra arms, deltas, decision). Lifecycle
   // fields (promotion/rollback/lineage/timestamps) are excluded so a
@@ -1146,6 +1419,17 @@ export function canonicalEvidence(record: ExperimentRecord): string {
     })),
     deltas: record.deltas,
     gate: { decision: record.gate.decision, checks: record.gate.checks },
+    // Phase 13: suite version hashes bind evidence to the exact task set.
+    // When suiteVersion is present, changed holdout content (or any task
+    // set change) invalidates the prior evidence binding. Omitted for
+    // legacy records so their evidence hashes remain stable.
+    suiteVersion: record.suiteVersion
+      ? {
+          taskSetHash: record.suiteVersion.taskSetHash,
+          holdoutHash: record.suiteVersion.holdoutHash,
+          contentHash: record.suiteVersion.contentHash,
+        }
+      : undefined,
   };
   return JSON.stringify(payload);
 }

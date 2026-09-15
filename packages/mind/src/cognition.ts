@@ -29,6 +29,11 @@ export interface CognitionConfig {
   // configuration and the subject of prompt-evolution candidates
   // (e.g. a JSON-only constraint). Never set from task input.
   systemPromptExtra?: string;
+  // Cache namespace isolates cache keys by evaluation phase. Holdout and
+  // protected-category tasks MUST use a different namespace than the
+  // evolution set so cached evolution-set results never leak into holdout
+  // evaluation. Defaults to "evolution" for backward compatibility.
+  cacheNamespace?: string;
 }
 
 const DEFAULT_CONFIG: CognitionConfig = {
@@ -37,6 +42,7 @@ const DEFAULT_CONFIG: CognitionConfig = {
   enableCache: true,
   cacheTtlMs: 300000,
   deterministicFormat: "raw",
+  cacheNamespace: "evolution",
 };
 
 // Engine-wide model sampling default, recorded in experiment records so
@@ -471,11 +477,16 @@ export class CognitionEngine {
     // - available model ids: the same input routes to different models as
     //   runtimes appear/disappear; a cached model-A answer must never stand
     //   in for a model-B execution.
+    // - cacheNamespace: isolates cache by evaluation phase. Holdout and
+    //   protected-category tasks MUST use a different namespace than the
+    //   evolution set so cached evolution-set results never leak into holdout
+    //   evaluation. This is the anti-leakage guarantee.
     // (Cache is per-engine-instance, so mind identity is structural.)
     const format = this.config.deterministicFormat ?? "raw";
     const prompt = (this.config.systemPromptExtra ?? "").trim();
     const models = [...availableModelIds].sort().join(",");
-    return `${format}|${prompt}|${models}|${task.type}:${JSON.stringify(task.input)}`;
+    const namespace = this.config.cacheNamespace ?? "evolution";
+    return `${namespace}|${format}|${prompt}|${models}|${task.type}:${JSON.stringify(task.input)}`;
   }
 
   // Applies a promoted genome's cognitive configuration to the live engine.

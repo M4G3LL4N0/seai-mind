@@ -172,6 +172,8 @@ export class SEAIClient {
         minQualityImprovement?: number;
         maxCategoryRegression?: number;
         varianceSignalToNoise?: number;
+        minHoldoutDelta?: number;
+        minHoldoutTasks?: number;
       };
     }
   ): Promise<unknown> {

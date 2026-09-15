@@ -222,6 +222,9 @@ evolveCmd
   .option("--repeat-runs <n>", "Run each task N times to measure per-task variance (default 1)", "1")
   .option("--max-category-regression <fraction>", "Reject if any category regresses more than this fraction", "0.10")
   .option("--variance-signal-to-noise <multiplier>", "Quality signal must exceed Nx pooled per-task variance", "2")
+  .option("--min-holdout-delta <fraction>", "Minimum holdout quality improvement for PASS (default 0.05)", "0.05")
+  .option("--min-holdout-tasks <n>", "Minimum holdout tasks required for PASS (default 3)", "3")
+  .option("--json", "Output machine-readable JSON")
   .action(async (weakness, options) => {
     const spinner = ora("Running evolution experiment...").start();
 
@@ -245,6 +248,8 @@ evolveCmd
         gateThresholds: {
           maxCategoryRegression: Number(options.maxCategoryRegression),
           varianceSignalToNoise: Number(options.varianceSignalToNoise),
+          minHoldoutDelta: Number(options.minHoldoutDelta),
+          minHoldoutTasks: Number(options.minHoldoutTasks),
         },
       });
       const record = result as {
@@ -264,27 +269,31 @@ evolveCmd
 
       spinner.succeed(`Experiment completed: ${String(record.decision).toUpperCase()}`);
 
-      console.log("\n" + chalk.bold("Evolution Experiment"));
-      console.log(chalk.gray("─".repeat(50)));
-      console.log(`Mind: ${options.mind}`);
-      if (weakness) console.log(`Observation: ${weakness}`);
-      console.log(`Experiment: ${record.experimentId}`);
-      console.log(`Suite: ${record.suite}`);
-      console.log(`Reproducibility: ${record.reproducibility}`);
-      if (record.taskRuns && record.taskRuns > 1) {
-        console.log(`Runs per task: ${record.taskRuns} (confidence: ${record.confidence}, per-task variance: ${(record.perTaskVariance ?? 0).toFixed(4)})`);
-      }
-      console.log(`Evidence hash: ${String(record.evidenceHash ?? "n/a").slice(0, 16)}...`);
-      console.log(`\nBaseline quality: ${Number(record.baselineQuality).toFixed(2)}`);
-      console.log(`Candidate quality: ${Number(record.candidateQuality).toFixed(2)}`);
-      for (const extra of record.extraCandidates ?? []) {
-        console.log(`Candidate ${extra.candidateId.slice(0, 8)}: quality ${Number(extra.quality).toFixed(2)} → ${String(extra.decision).toUpperCase()}`);
-      }
-      console.log("\nDecision:");
-      console.log(`  ${String(record.decision).toUpperCase()}`);
-      for (const reason of record.reasons) console.log(`  - ${reason}`);
-      if (record.decision === "eligible") {
-        console.log(chalk.yellow(`\nEligible but NOT promoted (auto-promote is off). Run: seai evolve promote ${record.experimentId} --mind ${options.mind}`));
+      if (options.json) {
+        console.log(JSON.stringify(record, null, 2));
+      } else {
+        console.log("\n" + chalk.bold("Evolution Experiment"));
+        console.log(chalk.gray("─".repeat(50)));
+        console.log(`Mind: ${options.mind}`);
+        if (weakness) console.log(`Observation: ${weakness}`);
+        console.log(`Experiment: ${record.experimentId}`);
+        console.log(`Suite: ${record.suite}`);
+        console.log(`Reproducibility: ${record.reproducibility}`);
+        if (record.taskRuns && record.taskRuns > 1) {
+          console.log(`Runs per task: ${record.taskRuns} (confidence: ${record.confidence}, per-task variance: ${(record.perTaskVariance ?? 0).toFixed(4)})`);
+        }
+        console.log(`Evidence hash: ${String(record.evidenceHash ?? "n/a").slice(0, 16)}...`);
+        console.log(`\nBaseline quality: ${Number(record.baselineQuality).toFixed(2)}`);
+        console.log(`Candidate quality: ${Number(record.candidateQuality).toFixed(2)}`);
+        for (const extra of record.extraCandidates ?? []) {
+          console.log(`Candidate ${extra.candidateId.slice(0, 8)}: quality ${Number(extra.quality).toFixed(2)} → ${String(extra.decision).toUpperCase()}`);
+        }
+        console.log("\nDecision:");
+        console.log(`  ${String(record.decision).toUpperCase()}`);
+        for (const reason of record.reasons) console.log(`  - ${reason}`);
+        if (record.decision === "eligible") {
+          console.log(chalk.yellow(`\nEligible but NOT promoted (auto-promote is off). Run: seai evolve promote ${record.experimentId} --mind ${options.mind}`));
+        }
       }
 
       await client.shutdown();

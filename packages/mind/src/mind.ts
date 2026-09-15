@@ -40,6 +40,7 @@ import {
   ARITHMETIC_FORMAT_SUITE_V1,
   applyPromotion,
   compareArms,
+  computeSuiteVersion,
   decideGate,
   formatComplianceCriterion,
   measureArm,
@@ -68,6 +69,7 @@ import {
   type ExperimentRecord,
   type ExperimentStorePaths,
   type ExperimentSuite,
+  type SuiteVersion,
 } from "./experiment.js";
 import type { EvolutionCandidate } from "@seai/core";
 
@@ -436,6 +438,11 @@ export class MindRuntime {
     try {
       const parent = await this.ensureBaselineGenome();
 
+      // Phase 13: compute suite version once. The hashes (taskSetHash, holdoutHash,
+      // contentHash) bind evidence to the exact task set. Changed holdout content
+      // invalidates prior evidence binding via canonicalEvidence.
+      const suiteVersion = computeSuiteVersion(suite);
+
       const evolutionTasks = suite.tasks.filter((t) => !t.holdout);
       const holdoutTasks = suite.holdoutTasks ?? suite.tasks.filter((t) => t.holdout);
       const protectedTasks = suite.tasks.filter((t) => t.protected);
@@ -471,14 +478,18 @@ export class MindRuntime {
       );
 
       // Baseline holdout arm: shared Stage 2 evidence for every candidate.
+      // Phase 13: use a SEPARATE cognition engine with cacheNamespace="holdout"
+      // so cached evolution-set results NEVER leak into holdout evaluation.
+      const holdoutConfig = { ...experimentConfig, cacheNamespace: "holdout" };
+      const baselineHoldoutSandbox = this.spawnSandbox(holdoutConfig);
       const baselineHoldout =
         holdoutTasks.length > 0
           ? await measureArm(
               {
                 telemetry: this.telemetry,
-                cognition: baselineSandbox.cognition,
+                cognition: baselineHoldoutSandbox.cognition,
                 mindId: this.config.identity.id,
-                taskContext: baselineSandbox.taskContext,
+                taskContext: baselineHoldoutSandbox.taskContext,
                 taskTimeoutMs: opts?.taskTimeoutMs,
                 repeatRuns: opts?.repeatRuns,
               },
@@ -488,9 +499,13 @@ export class MindRuntime {
           : null;
 
       // Baseline protected-category arms: shared Stage 2 evidence.
+      // Phase 13: use a SEPARATE cognition engine with cacheNamespace="protected"
+      // so cached evolution-set results NEVER leak into protected evaluation.
+      const protectedConfig = { ...experimentConfig, cacheNamespace: "protected" };
+      const baselineProtectedSandbox = this.spawnSandbox(protectedConfig);
       const baselineProtected =
         protectedTasks.length > 0
-          ? await this.measureProtectedByCategory(protectedTasks, baselineSandbox, criterion, opts?.taskTimeoutMs)
+          ? await this.measureProtectedByCategory(protectedTasks, baselineProtectedSandbox, criterion, opts?.taskTimeoutMs)
           : {};
 
       // CANDIDATES from measured evidence (none when nothing failed).
@@ -506,8 +521,11 @@ export class MindRuntime {
           specName: spec.name,
         });
         if (!candidate) continue;
+        // Phase 13: evolution-set evaluation uses cacheNamespace="evolution"
+        // (explicit default, but kept for clarity and anti-leakage guarantee)
+        const evolutionConfig = { ...experimentConfig, cacheNamespace: "evolution" };
         const sandbox = this.spawnSandbox({
-          ...experimentConfig,
+          ...evolutionConfig,
           ...((candidate.changes.cognitionConfig ?? {}) as Partial<CognitionConfig>),
         });
         const result = await measureArm(
@@ -561,6 +579,7 @@ export class MindRuntime {
           promotion: null,
           rollback: null,
           lineage: [...(parent.lineage ?? []), parent.id],
+          suiteVersion,
         };
         await storeGenomeSnapshot(paths, parent);
         await appendExperimentRecord(paths, record);
@@ -575,18 +594,24 @@ export class MindRuntime {
       // ============================================================
       const stage2: CandidateEvaluation[] = [];
       for (const candidateEval of evaluated) {
+        // Phase 13: candidate evolution-set evaluation uses cacheNamespace="evolution"
+        const evolutionConfig = { ...experimentConfig, cacheNamespace: "evolution" };
         const candidateSandbox = this.spawnSandbox({
-          ...experimentConfig,
+          ...evolutionConfig,
           ...((candidateEval.candidate.changes.cognitionConfig ?? {}) as Partial<CognitionConfig>),
         });
+        // Phase 13: holdout evaluation uses cacheNamespace="holdout" — NEVER shares
+        // cache with evolution-set evaluation. This is the anti-leakage guarantee.
+        const holdoutConfig = { ...experimentConfig, cacheNamespace: "holdout" };
+        const holdoutSandbox = this.spawnSandbox(holdoutConfig);
         const candidateHoldout =
           holdoutTasks.length > 0
             ? await measureArm(
                 {
                   telemetry: this.telemetry,
-                  cognition: candidateSandbox.cognition,
+                  cognition: holdoutSandbox.cognition,
                   mindId: this.config.identity.id,
-                  taskContext: candidateSandbox.taskContext,
+                  taskContext: holdoutSandbox.taskContext,
                   taskTimeoutMs: opts?.taskTimeoutMs,
                   repeatRuns: opts?.repeatRuns,
                 },
@@ -594,9 +619,13 @@ export class MindRuntime {
                 criterion
               )
             : null;
+        // Phase 13: protected-category evaluation uses cacheNamespace="protected" —
+        // NEVER shares cache with evolution-set or holdout evaluation.
+        const protectedConfig = { ...experimentConfig, cacheNamespace: "protected" };
+        const protectedSandbox = this.spawnSandbox(protectedConfig);
         const candidateProtected =
           protectedTasks.length > 0
-            ? await this.measureProtectedByCategory(protectedTasks, candidateSandbox, criterion, opts?.taskTimeoutMs)
+            ? await this.measureProtectedByCategory(protectedTasks, protectedSandbox, criterion, opts?.taskTimeoutMs)
             : {};
 
         const holdoutResults: HoldoutResults | undefined =
@@ -612,8 +641,8 @@ export class MindRuntime {
         const protectedResults: Record<string, ProtectedCategoryResult> = {};
         for (const [category, base] of Object.entries(baselineProtected)) {
           protectedResults[category] = {
-            baselineSuccess: base.successRate,
-            candidateSuccess: candidateProtected[category]?.successRate ?? 0,
+            baselineSuccessRate: base.successRate,
+            candidateSuccessRate: candidateProtected[category]?.successRate ?? 0,
           };
         }
 
@@ -680,6 +709,7 @@ export class MindRuntime {
         promotion: null,
         rollback: null,
         lineage: [...(parent.lineage ?? []), parent.id],
+        suiteVersion,
       };
 
       await storeGenomeSnapshot(paths, parent);
