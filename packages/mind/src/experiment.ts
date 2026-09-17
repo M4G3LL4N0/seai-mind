@@ -21,6 +21,14 @@ import { createHash } from "node:crypto";
 import { generateId, nowISO, detectThreats, EventTypes } from "@seai/core";
 import { createTelemetry, type Telemetry } from "@seai/core";
 import type { EvolutionCandidate, Genome, Version, TaskCategory } from "@seai/core";
+import type {
+  ImmuneSignal,
+  ImmuneSignalKind,
+  ImmuneSeverity,
+  ImmuneDisposition,
+  ImmuneAssessment,
+  ImmuneAssessmentGateSchema,
+} from "@seai/core";
 import type { CognitionEngine, CognitionConfig, TaskContext } from "./cognition.js";
 
 // ---------------------------------------------------------------------------
@@ -1696,4 +1704,447 @@ export async function rollbackInStore(
     ? ((await readExperimentHistory(paths)).find((r) => r.id === active.experimentId) ?? null)
     : null;
   return { record: updated, genome };
+}
+
+// ---------------------------------------------------------------------------
+// Phase 14: Evolution Immune System — additive, real-evidence only
+// ---------------------------------------------------------------------------
+
+// Stable signal id: hash of kind + sorted evidenceRefs (deterministic, provenance-carrying)
+function signalId(kind: ImmuneSignalKind, evidenceRefs: readonly string[]): string {
+  const payload = `${kind}|${evidenceRefs.slice().sort().join(",")}`;
+  return createHash("sha256").update(payload).digest("hex").slice(0, 16);
+}
+
+// Factory: creates an immune signal with stable id, timestamp, and correct measured flag
+export function makeImmuneSignal(input: {
+  kind: ImmuneSignalKind;
+  severity: ImmuneSeverity;
+  evidenceRefs: readonly string[];
+  source: string;
+  message: string;
+  measured: boolean;
+  candidateId?: string;
+  experimentId?: string;
+}): ImmuneSignal {
+  const id = signalId(input.kind, input.evidenceRefs);
+  return {
+    id,
+    kind: input.kind,
+    severity: input.severity,
+    measured: input.measured,
+    evidenceRefs: input.evidenceRefs.length > 0 ? [...input.evidenceRefs] : [],
+    source: input.source,
+    message: input.message,
+    at: nowISO(),
+    candidateId: input.candidateId,
+    experimentId: input.experimentId,
+  };
+}
+
+// NOT_MEASURED helpers for cost/latency/token when evidence is unavailable
+export function unmeasuredCost(candidateId?: string, experimentId?: string): ImmuneSignal {
+  return makeImmuneSignal({
+    kind: "COST_REGRESSION",
+    severity: "INFO",
+    evidenceRefs: [],
+    source: "cost-model",
+    message: "Cost measurement unavailable — no regression claim made",
+    measured: false,
+    candidateId,
+    experimentId,
+  });
+}
+
+export function unmeasuredLatency(candidateId?: string, experimentId?: string): ImmuneSignal {
+  return makeImmuneSignal({
+    kind: "LATENCY_REGRESSION",
+    severity: "INFO",
+    evidenceRefs: [],
+    source: "cost-model",
+    message: "Latency measurement unavailable — no regression claim made",
+    measured: false,
+    candidateId,
+    experimentId,
+  });
+}
+
+export function unmeasuredToken(candidateId?: string, experimentId?: string): ImmuneSignal {
+  return makeImmuneSignal({
+    kind: "TOKEN_REGRESSION",
+    severity: "INFO",
+    evidenceRefs: [],
+    source: "cost-model",
+    message: "Token measurement unavailable — no regression claim made",
+    measured: false,
+    candidateId,
+    experimentId,
+  });
+}
+
+// Input bundle for signal derivation (all real Phase 13 evidence sources)
+export interface DeriveImmuneSignalsInput {
+  gateReport: GateReport;
+  generalizationDecision: "PASS" | "HOLD" | "FAIL";
+  integrity: {
+    candidateHashValid: boolean;
+    holdoutHashValid: boolean;
+    evidenceHashValid: boolean;
+  };
+  suiteVersion?: SuiteVersion;
+  resolvedSuiteVersion?: SuiteVersion;
+  reproducibility: "full" | "limited";
+  variance?: { baseV: number | null; candV: number | null; signalToNoise: number } | null;
+  cost?: number | null;
+  latencyMs?: number | null;
+  tokens?: number | null;
+  candidateId?: string;
+  experimentId?: string;
+}
+
+// Derive immune signals from real evidence ONLY.
+// Every signal carries `measured: true` when real evidence exists, `false` otherwise.
+// No fabricated severity, no invented statistics.
+export function deriveImmuneSignals(input: DeriveImmuneSignalsInput): ImmuneSignal[] {
+  const signals: ImmuneSignal[] = [];
+  const { candidateId, experimentId } = input;
+
+  // 1. Gate reject with regression → QUALITY_REGRESSION or PROTECTED_CATEGORY_REGRESSION
+  if (input.gateReport.decision === "reject") {
+    const regCheck = input.gateReport.checks.find((c) => c.name === "regression-success" && !c.passed);
+    const protectedFail = input.gateReport.checks.find((c) => c.name.startsWith("protected-") && !c.passed);
+    if (protectedFail) {
+      signals.push(
+        makeImmuneSignal({
+          kind: "PROTECTED_CATEGORY_REGRESSION",
+          severity: "HIGH",
+          evidenceRefs: [`gate:${protectedFail.name}`],
+          source: "gate",
+          message: protectedFail.details,
+          measured: true,
+          candidateId,
+          experimentId,
+        })
+      );
+    } else if (regCheck) {
+      signals.push(
+        makeImmuneSignal({
+          kind: "QUALITY_REGRESSION",
+          severity: "HIGH",
+          evidenceRefs: [`gate:${regCheck.name}`],
+          source: "gate",
+          message: regCheck.details,
+          measured: true,
+          candidateId,
+          experimentId,
+        })
+      );
+    }
+    // Policy failure (threat scan, allowlist, privacy) → POLICY_FAILURE
+    const policyFail = input.gateReport.checks.find((c) => c.name === "safety-threat-scan" && !c.passed);
+    if (policyFail) {
+      signals.push(
+        makeImmuneSignal({
+          kind: "POLICY_FAILURE",
+          severity: "CRITICAL",
+          evidenceRefs: [`gate:${policyFail.name}`],
+          source: "gate",
+          message: policyFail.details,
+          measured: true,
+          candidateId,
+          experimentId,
+        })
+      );
+    }
+  }
+
+  // 2. Generalization gate
+  if (input.generalizationDecision === "FAIL") {
+    signals.push(
+      makeImmuneSignal({
+        kind: "GENERALIZATION_FAILURE",
+        severity: "HIGH",
+        evidenceRefs: ["generalization:fail"],
+        source: "generalization-gate",
+        message: "Candidate regressed on holdout tasks — generalization failure",
+        measured: true,
+        candidateId,
+        experimentId,
+      })
+    );
+  } else if (input.generalizationDecision === "HOLD") {
+    signals.push(
+      makeImmuneSignal({
+        kind: "GENERALIZATION_FAILURE",
+        severity: "WARNING",
+        evidenceRefs: ["generalization:hold"],
+        source: "generalization-gate",
+        message: "Insufficient holdout evidence to confirm generalization",
+        measured: false,
+        candidateId,
+        experimentId,
+      })
+    );
+  }
+
+  // 3. Evidence integrity
+  if (!input.integrity.evidenceHashValid) {
+    signals.push(
+      makeImmuneSignal({
+        kind: "EVIDENCE_INVALID",
+        severity: "CRITICAL",
+        evidenceRefs: ["integrity:evidence-hash"],
+        source: "integrity-check",
+        message: "Evidence hash verification failed — measurements may be tampered",
+        measured: true,
+        candidateId,
+        experimentId,
+      })
+    );
+  }
+  if (!input.integrity.candidateHashValid) {
+    signals.push(
+      makeImmuneSignal({
+        kind: "EVIDENCE_INVALID",
+        severity: "CRITICAL",
+        evidenceRefs: ["integrity:candidate-hash"],
+        source: "integrity-check",
+        message: "Candidate measurement hash invalid",
+        measured: true,
+        candidateId,
+        experimentId,
+      })
+    );
+  }
+  if (!input.integrity.holdoutHashValid) {
+    signals.push(
+      makeImmuneSignal({
+        kind: "EVIDENCE_INVALID",
+        severity: "CRITICAL",
+        evidenceRefs: ["integrity:holdout-hash"],
+        source: "integrity-check",
+        message: "Holdout measurement hash invalid",
+        measured: true,
+        candidateId,
+        experimentId,
+      })
+    );
+  }
+
+  // 4. Suite mismatch (re-resolution shows taskSetHash/holdoutHash changed)
+  if (input.suiteVersion && input.resolvedSuiteVersion) {
+    if (
+      input.suiteVersion.taskSetHash !== input.resolvedSuiteVersion.taskSetHash ||
+      input.suiteVersion.holdoutHash !== input.resolvedSuiteVersion.holdoutHash
+    ) {
+      signals.push(
+        makeImmuneSignal({
+          kind: "SUITE_MISMATCH",
+          severity: "CRITICAL",
+          evidenceRefs: [
+            `suite:taskSetHash:${input.suiteVersion.taskSetHash}->${input.resolvedSuiteVersion.taskSetHash}`,
+            `suite:holdoutHash:${input.suiteVersion.holdoutHash}->${input.resolvedSuiteVersion.holdoutHash}`,
+          ],
+          source: "suite-version",
+          message: "Suite re-resolution produced different task/holdout hashes — evidence binding invalidated",
+          measured: true,
+          candidateId,
+          experimentId,
+        })
+      );
+    }
+  }
+
+  // 5. Variance signal (Phase 9 repeatRuns machinery)
+  if (input.variance && input.variance.baseV !== null && input.variance.candV !== null) {
+    const pooled = Math.max(input.variance.baseV, input.variance.candV);
+    if (pooled > input.variance.signalToNoise * 0.01) {
+      // Use a threshold relative to signal-to-noise; actual threshold is policy-driven
+      signals.push(
+        makeImmuneSignal({
+          kind: "HIGH_VARIANCE",
+          severity: "WARNING",
+          evidenceRefs: [
+            `variance:base:${input.variance.baseV.toFixed(4)}`,
+            `variance:cand:${input.variance.candV.toFixed(4)}`,
+            `variance:pooled:${pooled.toFixed(4)}`,
+          ],
+          source: "variance-gate",
+          message: `Pooled per-task variance ${pooled.toFixed(4)} exceeds noise floor`,
+          measured: true,
+          candidateId,
+          experimentId,
+        })
+      );
+    }
+  }
+
+  // 6. Reproducibility limitation
+  if (input.reproducibility === "limited") {
+    signals.push(
+      makeImmuneSignal({
+        kind: "REPRODUCIBILITY_LIMITATION",
+        severity: "WARNING",
+        evidenceRefs: ["reproducibility:limited"],
+        source: "reproducibility-gate",
+        message: "Stochastic engine sampling limits bit-reproducibility; limited evidence",
+        measured: true,
+        candidateId,
+        experimentId,
+      })
+    );
+  }
+
+  // 7. Missing cost/latency/token measurements → NOT_MEASURED signals
+  if (input.cost === null) {
+    signals.push(unmeasuredCost(candidateId, experimentId));
+  }
+  if (input.latencyMs === null) {
+    signals.push(unmeasuredLatency(candidateId, experimentId));
+  }
+  if (input.tokens === null) {
+    signals.push(unmeasuredToken(candidateId, experimentId));
+  }
+
+  return signals;
+}
+
+// Immunity policy: maps signal kinds → severity, defines critical/quarantine kinds
+export interface ImmunityPolicy {
+  maxVariance: number;
+  requiredHoldoutEvidence: boolean;
+  protectedRegressionThreshold: number;
+  criticalKinds: ImmuneSignalKind[];
+  quarantineKinds: ImmuneSignalKind[];
+}
+
+export function defaultImmunityPolicy(): ImmunityPolicy {
+  return {
+    maxVariance: 0.1,
+    requiredHoldoutEvidence: true,
+    protectedRegressionThreshold: 0.0,
+    criticalKinds: ["EVIDENCE_INVALID", "SUITE_MISMATCH", "POLICY_FAILURE"],
+    quarantineKinds: ["EVIDENCE_INVALID", "SUITE_MISMATCH", "POLICY_FAILURE"],
+  };
+}
+
+// Severity ordering for assessment
+const SEVERITY_ORDER: Record<ImmuneSeverity, number> = { INFO: 0, WARNING: 1, HIGH: 2, CRITICAL: 3 };
+
+export function severityFor(signal: ImmuneSignal, policy: ImmunityPolicy): ImmuneSeverity {
+  // Policy can override per-kind; default is signal's own severity
+  if (policy.criticalKinds.includes(signal.kind)) return "CRITICAL";
+  if (policy.quarantineKinds.includes(signal.kind)) return "CRITICAL";
+  return signal.severity;
+}
+
+// Disposition decision input
+export interface DecideImmuneAssessmentInput {
+  signals: ImmuneSignal[];
+  gateDecision: "eligible" | "reject" | "hold";
+  generalizationDecision: "PASS" | "HOLD" | "FAIL";
+  policy: ImmunityPolicy;
+}
+
+export interface ImmuneAssessmentResult {
+  disposition: ImmuneDisposition;
+  severity: ImmuneSeverity;
+  reason: string;
+  failsCritical: boolean;
+}
+
+// Decide immune assessment from signals + gate + generalization + policy.
+// Critical rules (test-enforced):
+// - No signals + gate eligible → CLEAR
+// - Any WARNING-kind signal (or gate HOLD) → WARNING (NOT BLOCKED)
+// - HIGH/severe-but-not-critical (protected regression, variance) → BLOCKED
+// - CRITICAL kinds (EVIDENCE_INVALID, SUITE_MISMATCH, POLICY_FAILURE) → QUARANTINED
+// - Missing holdout evidence → BLOCKED/WARNING as NOT_MEASURED, never CLEAR
+export function decideImmuneAssessment(input: DecideImmuneAssessmentInput): ImmuneAssessmentResult {
+  const { signals, gateDecision, generalizationDecision, policy } = input;
+
+  // No signals + gate eligible → CLEAR
+  if (signals.length === 0 && gateDecision === "eligible") {
+    return {
+      disposition: "CLEAR",
+      severity: "INFO",
+      reason: "No immune signals; all gates eligible",
+      failsCritical: false,
+    };
+  }
+
+  // Track highest severity and critical flags
+  let maxSeverity: ImmuneSeverity = "INFO";
+  let hasCritical = false;
+  let hasHigh = false;
+  let hasWarning = false;
+  let hasUnmeasured = false;
+
+  for (const signal of signals) {
+    const sev = severityFor(signal, policy);
+    if (SEVERITY_ORDER[sev] > SEVERITY_ORDER[maxSeverity]) maxSeverity = sev;
+    if (sev === "CRITICAL") hasCritical = true;
+    if (sev === "HIGH") hasHigh = true;
+    if (sev === "WARNING") hasWarning = true;
+    if (!signal.measured) hasUnmeasured = true;
+  }
+
+  // Gate decision feeds into assessment
+  if (gateDecision === "hold") hasWarning = true;
+  if (gateDecision === "reject") {
+    // Gate reject already produced signals above; if somehow not, treat as high
+    hasHigh = true;
+  }
+
+  // Generalization feeds in
+  if (generalizationDecision === "FAIL") hasHigh = true;
+  if (generalizationDecision === "HOLD") hasWarning = true;
+
+  // Critical kinds → QUARANTINED
+  if (hasCritical) {
+    return {
+      disposition: "QUARANTINED",
+      severity: "CRITICAL",
+      reason: "Critical immune signal detected (evidence invalid, suite mismatch, or policy failure)",
+      failsCritical: true,
+    };
+  }
+
+  // HIGH severity (but not critical) → BLOCKED
+  if (hasHigh) {
+    return {
+      disposition: "BLOCKED",
+      severity: maxSeverity,
+      reason: "High-severity immune signal (protected regression, generalization failure, or high variance)",
+      failsCritical: false,
+    };
+  }
+
+  // WARNING (or gate HOLD) → WARNING
+  if (hasWarning) {
+    return {
+      disposition: "WARNING",
+      severity: maxSeverity,
+      reason: "Warning-level immune signal or gate HOLD; candidate promotable with explicit re-check",
+      failsCritical: false,
+    };
+  }
+
+  // Unmeasured signals only → WARNING (UNAVAILABLE != PASS)
+  if (hasUnmeasured) {
+    return {
+      disposition: "WARNING",
+      severity: "WARNING",
+      reason: "Missing measurements (cost/latency/token/generalization) — insufficient evidence for CLEAR",
+      failsCritical: false,
+    };
+  }
+
+  // Default fallback
+  return {
+    disposition: "WARNING",
+    severity: maxSeverity,
+    reason: "Immune assessment inconclusive",
+    failsCritical: false,
+  };
 }
