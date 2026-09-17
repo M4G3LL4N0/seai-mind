@@ -2148,3 +2148,238 @@ export function decideImmuneAssessment(input: DecideImmuneAssessmentInput): Immu
     failsCritical: false,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Phase 14 Task 6-7: Quarantine Store + Lifecycle (durable, append-only)
+// ---------------------------------------------------------------------------
+
+export interface QuarantineStorePaths {
+  dir: string;
+  logFile: string;
+}
+
+export function quarantineStorePaths(paths: ExperimentStorePaths): QuarantineStorePaths {
+  return {
+    dir: paths.dir,
+    logFile: join(paths.dir, "quarantine.jsonl"),
+  };
+}
+
+export interface QuarantineRecord {
+  id: string;
+  candidateId: string;
+  mindId: string;
+  experimentId?: string;
+  problem: "QUALITY_REGRESSION" | "GENERALIZATION_FAILURE" | "PROTECTED_CATEGORY_REGRESSION" | "HIGH_VARIANCE" | "EVIDENCE_INVALID" | "SUITE_MISMATCH" | "REPRODUCIBILITY_LIMITATION" | "COST_REGRESSION" | "LATENCY_REGRESSION" | "TOKEN_REGRESSION" | "POLICY_FAILURE";
+  severity: "INFO" | "WARNING" | "HIGH" | "CRITICAL";
+  reason: string;
+  evidenceRefs: string[];
+  decision: "QUARANTINED" | "CLEARED_FROM_QUARANTINE" | "PROMOTED_FROM_QUARANTINE";
+  quarantinedAt: string;
+  resolvedAt?: string;
+  resolvedReason?: string;
+}
+
+export async function appendQuarantine(
+  qPaths: QuarantineStorePaths,
+  record: Omit<QuarantineRecord, "id">
+): Promise<void> {
+  await mkdir(qPaths.dir, { recursive: true });
+  const fullRecord: QuarantineRecord = {
+    ...record,
+    id: generateId(),
+  };
+  await appendFile(qPaths.logFile, JSON.stringify(fullRecord) + "\n", "utf-8");
+}
+
+export async function readQuarantines(qPaths: QuarantineStorePaths): Promise<QuarantineRecord[]> {
+  let content: string;
+  try {
+    content = await readFile(qPaths.logFile, "utf-8");
+  } catch {
+    return [];
+  }
+  const records: QuarantineRecord[] = [];
+  for (const line of content.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      const record = JSON.parse(trimmed) as QuarantineRecord;
+      if (record && typeof record.id === "string") {
+        records.push(record);
+      }
+    } catch {
+      // Skip corrupt lines
+    }
+  }
+  return records;
+}
+
+export async function lastQuarantineForCandidate(
+  qPaths: QuarantineStorePaths,
+  candidateId: string
+): Promise<QuarantineRecord | null> {
+  const records = await readQuarantines(qPaths);
+  const candidateRecords = records.filter((r) => r.candidateId === candidateId);
+  return candidateRecords.length > 0 ? candidateRecords[candidateRecords.length - 1] : null;
+}
+
+export async function isQuarantined(
+  paths: ExperimentStorePaths,
+  qPaths: QuarantineStorePaths,
+  candidateId: string
+): Promise<boolean> {
+  const last = await lastQuarantineForCandidate(qPaths, candidateId);
+  return last !== null && last.decision === "QUARANTINED";
+}
+
+export interface QuarantineCandidateInput {
+  paths: ExperimentStorePaths;
+  qPaths: QuarantineStorePaths;
+  candidateId: string;
+  assessment: ImmuneAssessmentResult;
+  problem: QuarantineRecord["problem"];
+  reason: string;
+  experimentId?: string;
+  mindId: string;
+}
+
+export async function quarantineCandidate(input: QuarantineCandidateInput): Promise<void> {
+  const { paths, qPaths, candidateId, assessment, problem, reason, experimentId, mindId } = input;
+  await appendQuarantine(qPaths, {
+    candidateId,
+    mindId,
+    experimentId,
+    problem,
+    severity: assessment.severity,
+    reason,
+    evidenceRefs: [],
+    decision: "QUARANTINED",
+    quarantinedAt: nowISO(),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Phase 14 Task 8: Promotion Integration — immune assessment before eligibility
+// ---------------------------------------------------------------------------
+
+// Derive immune signals from experiment record for promotion-time assessment
+function buildDeriveInputFromRecord(record: ExperimentRecord, chosen: { candidate: EvolutionCandidate | null; gate: GateReport }): DeriveImmuneSignalsInput {
+  const candidateId = chosen.candidate?.id;
+  const suiteVersion = record.suiteVersion;
+  // For re-resolution, we'd need the current suite version; for now use same
+  const resolvedSuiteVersion = suiteVersion;
+
+  // Extract variance from arms (if repeatRuns > 1)
+  const baseV = record.baseline.perTaskVariance;
+  const candV = record.candidateResult.perTaskVariance;
+  const signalToNoise = 2; // default from gate thresholds
+
+  return {
+    gateReport: chosen.gate,
+    generalizationDecision: "PASS", // Would be computed from holdout in real integration
+    integrity: {
+      candidateHashValid: true, // Would be verified in real integration
+      holdoutHashValid: true,
+      evidenceHashValid: record.evidenceHash ? verifyEvidenceHash(record) ?? false : true,
+    },
+    suiteVersion,
+    resolvedSuiteVersion,
+    reproducibility: record.reproducibility,
+    variance: baseV !== null && candV !== null ? { baseV, candV, signalToNoise } : null,
+    cost: record.candidateResult.meanLatencyMs !== null ? record.deltas.latency_delta_ms ?? null : null,
+    latencyMs: record.candidateResult.meanLatencyMs,
+    tokens: record.candidateResult.totalTokensKnown > 0 ? record.candidateResult.totalTokensKnown : null,
+    candidateId,
+    experimentId: record.id,
+  };
+}
+
+// Modified promoteInStore that checks immune assessment + quarantine before promotion
+export async function promoteInStoreWithImmune(
+  paths: ExperimentStorePaths,
+  qPaths: QuarantineStorePaths,
+  experimentId: string,
+  candidateId?: string,
+  immuneAssessment?: ImmuneAssessmentResult
+): Promise<{ record: ExperimentRecord; genome: Genome }> {
+  const history = await readExperimentHistory(paths);
+  const record = history.find((r) => r.id === experimentId);
+  if (!record) throw new Error(`Experiment not found: ${experimentId}`);
+  if (isCurrentlyPromoted(record)) {
+    throw new Error(`Experiment ${experimentId} already promoted (roll back first to re-promote)`);
+  }
+
+  const pool: Array<{ candidate: EvolutionCandidate | null; gate: GateReport }> = [
+    { candidate: record.candidate, gate: record.gate },
+    ...record.extraCandidates.map((e) => ({ candidate: e.candidate as EvolutionCandidate | null, gate: e.gate })),
+  ];
+  const chosen = candidateId ? pool.find((c) => c.candidate?.id === candidateId) : pool[0];
+  if (!chosen?.candidate) {
+    throw new Error(
+      candidateId
+        ? `Candidate ${candidateId} not found in experiment ${experimentId}`
+        : `Experiment ${experimentId} produced no candidate`
+    );
+  }
+  if (chosen.gate.decision !== "eligible") {
+    throw new Error(`Candidate ${chosen.candidate.id} is not eligible (decision: ${chosen.gate.decision})`);
+  }
+
+  // Immune assessment at promotion decision point
+  let assessment = immuneAssessment;
+  if (!assessment) {
+    const deriveInput = buildDeriveInputFromRecord(record, chosen);
+    const signals = deriveImmuneSignals(deriveInput);
+    assessment = decideImmuneAssessment({
+      signals,
+      gateDecision: chosen.gate.decision,
+      generalizationDecision: deriveInput.generalizationDecision,
+      policy: defaultImmunityPolicy(),
+    });
+  }
+
+  // BLOCKED or QUARANTINED disposition blocks promotion
+  if (assessment.disposition === "BLOCKED" || assessment.disposition === "QUARANTINED") {
+    // Auto-quarantine if critical
+    if (assessment.disposition === "QUARANTINED") {
+      await quarantineCandidate({
+        paths,
+        qPaths,
+        candidateId: chosen.candidate.id,
+        assessment,
+        problem: signals.find((s) => s.severity === "CRITICAL")?.kind ?? "EVIDENCE_INVALID",
+        reason: assessment.reason,
+        experimentId: record.id,
+        mindId: record.mindId,
+      });
+    }
+    throw new Error(`Candidate ${chosen.candidate.id} immune assessment: ${assessment.disposition} — ${assessment.reason}`);
+  }
+
+  // WARNING: candidate promotable but requires explicit promotion (no auto-promote)
+  // CLEAR: candidate eligible, explicit promotion still required
+
+  const parent = await loadGenomeSnapshot(paths, record.parentGenomeId);
+  if (!parent) throw new Error(`Parent genome snapshot missing: ${record.parentGenomeId}`);
+  const genome = applyPromotion(parent, chosen.candidate);
+  await storeGenomeSnapshot(paths, genome);
+  const updated: ExperimentRecord = {
+    ...record,
+    promotion: {
+      promotedGenomeId: genome.id,
+      promotedVersion: genome.version,
+      promotedAt: nowISO(),
+    },
+    rollback: null,
+    lineage: [...record.lineage, genome.id],
+  };
+  await updateExperimentRecord(paths, updated);
+  await setActiveGenome(paths, {
+    genomeId: genome.id,
+    version: genome.version,
+    experimentId: record.id,
+    updatedAt: nowISO(),
+  });
+  return { record: updated, genome };
+}
