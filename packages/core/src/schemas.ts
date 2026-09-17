@@ -803,3 +803,147 @@ export const SEAIEventTypes = {
 } as const;
 
 export type SEAIEventType = typeof SEAIEventTypes[keyof typeof SEAIEventTypes];
+
+// ---------------------------------------------------------------------------
+// Phase 14 Task 1: Evolution Immune System — additive, durable, never fabricated
+// ---------------------------------------------------------------------------
+// INVARIANT (additive, legacy-proof): every field below is OPTIONAL or
+// defaulted so that a transient / unmeasured signal is representable, and a
+// pre-Phase-14 legacy record (without immune fields) parses without
+// fabrication. `measured:true` is only legal when real evidenceRefs exist;
+// `measured:false` (NOT_MEASURED) can never be reinterpreted as a pass.
+
+// Immune severity is a deliberately SMALL vocabulary (project policy, not
+// law): INFO / WARNING / HIGH / CRITICAL. No fabricated intermediate tiers.
+export const ImmuneSeverityValues = ["INFO", "WARNING", "HIGH", "CRITICAL"] as const;
+export const ImmuneSeveritySchema = z.enum(ImmuneSeverityValues);
+export type ImmuneSeverity = z.infer<typeof ImmuneSeveritySchema>;
+
+// Immune signal kinds — enumerated permanently. A kind is only ever ADDED,
+// never removed or renamed (additive schema invariant; history integrity).
+export const ImmuneSignalKinds = [
+  "QUALITY_REGRESSION",
+  "GENERALIZATION_FAILURE",
+  "PROTECTED_CATEGORY_REGRESSION",
+  "HIGH_VARIANCE",
+  "EVIDENCE_INVALID",
+  "SUITE_MISMATCH",
+  "REPRODUCIBILITY_LIMITATION",
+  "COST_REGRESSION",
+  "LATENCY_REGRESSION",
+  "TOKEN_REGRESSION",
+  "POLICY_FAILURE",
+] as const;
+export const ImmuneSignalKindSchema = z.enum(ImmuneSignalKinds);
+export type ImmuneSignalKind = z.infer<typeof ImmuneSignalKindSchema>;
+
+export const ImmuneSignalSchema = z
+  .object({
+    id: z.string().min(1),
+    kind: ImmuneSignalKindSchema,
+    severity: ImmuneSeveritySchema,
+    // Honest evidence flag: measured:true REQUIRES non-empty evidenceRefs
+    // (see .ref), so a pass can never be claimed on missing measurements.
+    measured: z.boolean(),
+    // Plain-string durable refs (e.g. "ev-1") — NOT uuid-restricted, so a
+    // legacy / external evidence reference parses additively without throwing.
+    evidenceRefs: z.array(z.string().min(1)).default([]),
+    source: z.string().min(1),
+    message: z.string().min(1),
+    at: z.string().datetime(),
+    candidateId: z.string().min(1).optional(),
+    experimentId: z.string().min(1).optional(),
+  })
+  .refine((s) => !s.measured || s.evidenceRefs.length > 0, {
+    message: "measured:true requires real evidenceRefs; a pass cannot be claimed on missing measurement",
+    path: ["measured"],
+  });
+export type ImmuneSignal = z.infer<typeof ImmuneSignalSchema>;
+
+export const ImmuneSignalsSchema = z.array(ImmuneSignalSchema).default([]);
+
+// Immune dispositions — enumerated permanently with a fixed vocabulary that is
+// only ever EXTENDED more-restrictive-to-more-restrictive (additive invariant).
+// CLEAR < WARNING < BLOCKED < QUARANTINED; a lower disposition can never
+// supersede a higher one, and absence of signals must not auto-restore a CLEAR.
+export const ImmuneDispositions = ["CLEAR", "WARNING", "BLOCKED", "QUARANTINED"] as const;
+export const ImmuneDispositionSchema = z.enum(ImmuneDispositions);
+export type ImmuneDisposition = z.infer<typeof ImmuneDispositionSchema>;
+
+// Durable, additive immune assessment over a candidate generation. Every
+// field is optional/defaulted (additive-only invariant) so a legacy Phase-13
+// record lacking immune fields parses without fabrication; `signals` default
+// to [] and an empty assessment is WARNING-by-policy when a gate needs one,
+// never an auto-CLEAR.
+// NOTE: ImmuneAssessmentSchema is intentionally a PLAIN z.object (NOT
+// superRefine-wrapped) so `.extend()` works — Phase 14's additive invariant
+// requires the durable assessment to remain extend-able by later phases and by
+// callers, exactly as the on-disk contract under `immuneSchemas.test.ts:105`
+// asserts. The under-report check is promoted to a separate
+// ImmuneAssessmentGateSchema (below) that gate policy binds when a decision is
+// needed, so the schema stays additive and the invariant survives.
+export const ImmuneAssessmentSchema = z.object({
+  disposition: ImmuneDispositionSchema,
+  severity: ImmuneSeveritySchema,
+  signals: ImmuneSignalsSchema,
+  timestamp: z.string().datetime(),
+  // Durable plain-string refs (e.g. "ev-1") — NOT uuid-restricted so a legacy
+  // / external evidence reference parses additively without throwing (the
+  // on-disk contract under immuneSchemas.test.ts:81 passes "ev-9").
+  evidenceRefs: z.array(z.string().min(1)).default([]),
+  candidateId: z.string().min(1).optional(),
+  mindId: z.string().min(1).optional(),
+  experimentId: z.string().min(1).optional(),
+  source: z.string().min(1).optional(),
+});
+export type ImmuneAssessment = z.infer<typeof ImmuneAssessmentSchema>;
+
+// Policy-grade variant used by gate decisions: enforces that the durable
+// disposition is never weaker than the strongest signal severity (an
+// assessment cannot under-report a BLOCKED/HIGH signal as a CLEAR).
+export const ImmuneAssessmentGateSchema = ImmuneAssessmentSchema.superRefine((a, ctx) => {
+  // Like-with-like severity ordering: both sides are ImmuneSeverity, so the
+  // declared assessment severity must be at least as strong as every signal
+  // severity — an assessment can never under-report a CRITICAL signal.
+  const declared = ImmuneSeverityValues.indexOf(a.severity);
+  for (const sig of a.signals) {
+    if (ImmuneSeverityValues.indexOf(sig.severity) > declared) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["signals"],
+        message: `assessment severity ${a.severity} is weaker than signal severity ${sig.severity}; assessment cannot under-report`,
+      });
+    }
+  }
+});
+export type ImmuneAssessmentGate = z.infer<typeof ImmuneAssessmentGateSchema>;
+
+// Durable quarantine record — append-only lifecycle event. A candidate in
+// quarantine is NOT the same as REJECTED: quarantined implies the problem is
+// recoverable and may return to evolution after remediation; it can never be
+// auto-promoted, only explicitly CLEARed or promoted through the gate.
+export const QuarantineDecisions = ["QUARANTINED", "CLEARED_FROM_QUARANTINE", "PROMOTED_FROM_QUARANTINE"] as const;
+export const QuarantineDecisionSchema = z.enum(QuarantineDecisions);
+export type QuarantineDecision = z.infer<typeof QuarantineDecisionSchema>;
+
+export const QuarantineSchema = z
+  .object({
+    // Durable plain-string refs (e.g. "cand-9" / "mind-1" / "ev-9"), NOT
+    // uuid-restricted — a legacy or external durable ref parses additively
+    // without throwing (contract immuneSchemas.test.ts:81).
+    candidateId: z.string().min(1),
+    mindId: z.string().min(1).optional(),
+    problem: ImmuneSignalKindSchema,
+    severity: ImmuneSeveritySchema,
+    reason: z.string().min(1),
+    evidenceRefs: z.array(z.string().min(1)).default([]),
+    decision: QuarantineDecisionSchema.default("QUARANTINED"),
+    quarantinedAt: z.string().datetime(),
+    resolvedAt: z.string().datetime().optional(),
+    resolvedReason: z.string().min(1).optional(),
+  })
+  .refine((q) => q.decision === "QUARANTINED" || q.decision === "CLEARED_FROM_QUARANTINE" || q.decision === "PROMOTED_FROM_QUARANTINE", {
+    message: "quarantine lifecycle is append-only; only durable dispositions are valid",
+    path: ["decision"],
+  });
+export type Quarantine = z.infer<typeof QuarantineSchema>;
