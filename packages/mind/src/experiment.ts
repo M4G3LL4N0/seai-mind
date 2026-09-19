@@ -1381,6 +1381,20 @@ export interface ExperimentRecord {
   // legitimately updated record still verifies, while ANY tampering with
   // measured values is detected on read.
   evidenceHash?: string;
+  // Phase 14: immune assessment (additive — optional so legacy records parse)
+  immuneAssessment?: {
+    disposition: "CLEAR" | "WARNING" | "BLOCKED" | "QUARANTINED";
+    severity: "INFO" | "WARNING" | "HIGH" | "CRITICAL";
+    reason: string;
+    failsCritical: boolean;
+  };
+  immunitySignals?: Array<{
+    kind: string;
+    severity: "INFO" | "WARNING" | "HIGH" | "CRITICAL";
+    measured: boolean;
+    source: string;
+    message: string;
+  }>;
 }
 
 // ---------------------------------------------------------------------------

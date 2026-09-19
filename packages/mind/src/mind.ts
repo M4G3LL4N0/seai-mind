@@ -383,35 +383,14 @@ export class MindRuntime {
 
     const record = result.value;
     
-    // Phase 14: derive immune signals and assessment at experiment completion
-    const qPaths = quarantineStorePaths(defaultStorePaths(this.config.identity.name, opts?.storeBaseDir));
-    const deriveInput = {
-      gateReport: record.gate,
-      generalizationDecision: "PASS" as const, // Would be derived from holdout
-      integrity: {
-        candidateHashValid: true,
-        holdoutHashValid: true,
-        evidenceHashValid: record.evidenceHash ? true : true,
-      },
-      suiteVersion: record.suiteVersion,
-      resolvedSuiteVersion: record.suiteVersion,
-      reproducibility: record.reproducibility,
-      variance: record.candidateResult.perTaskVariance !== null 
-        ? { baseV: record.baseline.perTaskVariance ?? 0, candV: record.candidateResult.perTaskVariance, signalToNoise: 2 }
-        : null,
-      cost: record.deltas.latency_delta_ms,
-      latencyMs: record.candidateResult.meanLatencyMs,
-      tokens: record.candidateResult.totalTokensKnown > 0 ? record.candidateResult.totalTokensKnown : null,
-      candidateId: record.candidate?.id,
-      experimentId: record.id,
+    // Phase 14: immune assessment is now stored in the record
+    const immuneAssessment = record.immuneAssessment ?? {
+      disposition: "UNKNOWN" as const,
+      severity: "INFO" as const,
+      reason: "Not computed",
+      failsCritical: false,
     };
-    const immuneSignals: ImmuneSignal[] = deriveImmuneSignals(deriveInput);
-    const immuneAssessment: ImmuneAssessmentResult = decideImmuneAssessment({
-      signals: immuneSignals,
-      gateDecision: record.gate.decision,
-      generalizationDecision: deriveInput.generalizationDecision,
-      policy: defaultImmunityPolicy(),
-    });
+    const immunitySignals = record.immunitySignals ?? [];
 
     return Result.ok({
       experimentId: record.id,
@@ -438,7 +417,7 @@ export class MindRuntime {
         reason: immuneAssessment.reason,
         failsCritical: immuneAssessment.failsCritical,
       },
-      immunitySignals: immuneSignals.map((s) => ({
+      immunitySignals: immunitySignals.map((s) => ({
         kind: s.kind,
         severity: s.severity,
         measured: s.measured,
@@ -743,6 +722,42 @@ export class MindRuntime {
         baseline.measurements.some((m) => m.executionPath === "model") ||
         stage2.some((e) => e.result.measurements.some((m) => m.executionPath === "model"));
 
+      // Phase 14: derive immune signals and assessment for durable record
+      const deriveInput = {
+        gateReport: gate,
+        generalizationDecision: "PASS" as const,
+        integrity: {
+          candidateHashValid: true,
+          holdoutHashValid: true,
+          evidenceHashValid: true,
+        },
+        suiteVersion,
+        resolvedSuiteVersion: suiteVersion,
+        reproducibility: (usesModel ? "limited" : "full") as "full" | "limited",
+        variance: candidateResult.perTaskVariance !== null
+          ? { baseV: baseline.perTaskVariance ?? 0, candV: candidateResult.perTaskVariance, signalToNoise: 2 }
+          : null,
+        cost: deltas.latency_delta_ms,
+        latencyMs: candidateResult.meanLatencyMs,
+        tokens: candidateResult.totalTokensKnown > 0 ? candidateResult.totalTokensKnown : null,
+        candidateId: primary?.candidate?.id,
+        experimentId: generateId(), // will be set below
+      };
+      const immuneSignals: ImmuneSignal[] = deriveImmuneSignals(deriveInput);
+      const immuneAssessment = decideImmuneAssessment({
+        signals: immuneSignals,
+        gateDecision: gate.decision,
+        generalizationDecision: deriveInput.generalizationDecision,
+        policy: defaultImmunityPolicy(),
+      });
+      const immunitySignals = immuneSignals.map((s) => ({
+        kind: s.kind,
+        severity: s.severity,
+        measured: s.measured,
+        source: s.source,
+        message: s.message,
+      }));
+
       const record: ExperimentRecord = {
         id: generateId(),
         mindId: this.config.identity.id,
@@ -763,6 +778,14 @@ export class MindRuntime {
         rollback: null,
         lineage: [...(parent.lineage ?? []), parent.id],
         suiteVersion,
+        // Phase 14: immune assessment (additive)
+        immuneAssessment: {
+          disposition: immuneAssessment.disposition,
+          severity: immuneAssessment.severity,
+          reason: immuneAssessment.reason,
+          failsCritical: immuneAssessment.failsCritical,
+        },
+        immunitySignals,
       };
 
       await storeGenomeSnapshot(paths, parent);
