@@ -17,7 +17,7 @@ import { EvaluationEngine } from "@seai/mind";
 import { EvolutionEngine } from "@seai/mind";
 import { createGenomeEngine, GenomeEngine } from "@seai/state";
 import { BenchmarkEngine } from "@seai/mind";
-import { MindRuntime, createMindRuntime, DEFAULT_MIND_TEMPLATE, MindConfig, MindTemplate, defaultStorePaths, getActiveGenome, readExperimentHistory, loadGenomeSnapshot, promoteInStore, rollbackInStore, verifyHistoryIntegrity } from "@seai/mind";
+import { MindRuntime, createMindRuntime, DEFAULT_MIND_TEMPLATE, MindConfig, MindTemplate, defaultStorePaths, getActiveGenome, readExperimentHistory, loadGenomeSnapshot, promoteInStore, rollbackInStore, verifyHistoryIntegrity, quarantineStorePaths, readQuarantines, lastQuarantineForCandidate } from "@seai/mind";
 import { IdentitySchema, VersionSchema, type Identity, type Version } from "@seai/core";
 import chalk from "chalk";
 import ora from "ora";
@@ -461,6 +461,224 @@ evolveCmd
       spinner.succeed(`Rolled back to genome ${genome.id} (v${genome.version.major}.${genome.version.minor}.${genome.version.patch})`);
     } catch (error) {
       spinner.fail("Rollback failed");
+      console.error(chalk.red("Error:"), error);
+      process.exit(1);
+    }
+  });
+
+// Phase 14: Immune System CLI
+const immuneCmd = evolveCmd
+  .command("immune")
+  .description("Immune system: assessment, quarantine, and trustworthy reports");
+
+immuneCmd
+  .command("status")
+  .description("Show current immune assessment severity, disposition, and quarantine count")
+  .option("--mind <name>", "Mind name", "default")
+  .option("--json", "Output machine-readable JSON")
+  .action(async (options) => {
+    try {
+      const paths = defaultStorePaths(options.mind);
+      const qPaths = quarantineStorePaths(paths);
+      const history = await readExperimentHistory(paths);
+      const quarantines = await readQuarantines(qPaths);
+
+      const latest = history.length > 0 ? history[history.length - 1] : undefined;
+      let immuneAssessment = undefined;
+      let immunitySignals = undefined;
+
+      if (latest && typeof (latest as any).immuneAssessment !== "undefined") {
+        immuneAssessment = (latest as any).immuneAssessment;
+        immunitySignals = (latest as any).immunitySignals;
+      }
+
+      const activeQuarantines = quarantines.filter((q) => q.decision === "QUARANTINED").length;
+
+      if (options.json) {
+        console.log(JSON.stringify({
+          mind: options.mind,
+          immuneAssessment: immuneAssessment ?? { disposition: "UNKNOWN", severity: "INFO", reason: "No immune assessment on latest experiment", failsCritical: false },
+          immunitySignals: immunitySignals ?? [],
+          quarantineCount: activeQuarantines,
+          totalQuarantines: quarantines.length,
+        }, null, 2));
+        return;
+      }
+
+      console.log("\n" + chalk.bold(`Immune Status (Mind: ${options.mind})`));
+      console.log(chalk.gray("─".repeat(50)));
+      if (!immuneAssessment) {
+        console.log("Disposition: UNKNOWN (no immune assessment on latest experiment)");
+        console.log("Severity:    INFO");
+        console.log("Reason:      No evolution experiment recorded yet");
+      } else {
+        const dispColor = immuneAssessment.disposition === "QUARANTINED" ? chalk.red :
+          immuneAssessment.disposition === "BLOCKED" ? chalk.red :
+          immuneAssessment.disposition === "WARNING" ? chalk.yellow : chalk.green;
+        console.log(`Disposition: ${dispColor(immuneAssessment.disposition)}`);
+        console.log(`Severity:    ${immuneAssessment.severity}`);
+        console.log(`Reason:      ${immuneAssessment.reason}`);
+        if (immuneAssessment.failsCritical) console.log(chalk.red("  ⚠ CRITICAL immune signal detected"));
+      }
+      if (immunitySignals && immunitySignals.length > 0) {
+        console.log(`\nSignals (${immunitySignals.length}):`);
+        for (const s of immunitySignals) {
+          const sevColor = s.severity === "CRITICAL" ? chalk.red : s.severity === "HIGH" ? chalk.red : s.severity === "WARNING" ? chalk.yellow : chalk.blue;
+          console.log(`  ${sevColor(s.kind)}  ${sevColor(s.severity)}  measured:${s.measured}  ${s.message}`);
+        }
+      }
+      console.log(`\nActive Quarantines: ${activeQuarantines}`);
+      console.log(`Total Quarantine Records: ${quarantines.length}`);
+    } catch (error) {
+      console.error(chalk.red("Error:"), error);
+      process.exit(1);
+    }
+  });
+
+immuneCmd
+  .command("quarantine")
+  .description("List durable quarantine history (never deletes)")
+  .option("--mind <name>", "Mind name", "default")
+  .option("--json", "Output machine-readable JSON")
+  .action(async (options) => {
+    try {
+      const paths = defaultStorePaths(options.mind);
+      const qPaths = quarantineStorePaths(paths);
+      const quarantines = await readQuarantines(qPaths);
+
+      if (quarantines.length === 0) {
+        console.log("No quarantine records. Run: seai evolve propose (immune triggers on critical signals)");
+        return;
+      }
+
+      if (options.json) {
+        console.log(JSON.stringify(quarantines, null, 2));
+        return;
+      }
+
+      console.log("\n" + chalk.bold(`Quarantine History (Mind: ${options.mind})`));
+      console.log(chalk.gray("─".repeat(70)));
+      for (const q of quarantines) {
+        const decisionColor = q.decision === "QUARANTINED" ? chalk.red :
+          q.decision === "CLEARED_FROM_QUARANTINE" ? chalk.green : chalk.blue;
+        console.log(`${q.id.slice(0, 12)}  ${decisionColor(q.decision)}  ${q.problem}  ${q.severity}`);
+        console.log(`  Candidate: ${q.candidateId}  Mind: ${q.mindId}  Exp: ${q.experimentId ?? "n/a"}`);
+        console.log(`  At: ${q.quarantinedAt}  Reason: ${q.reason}`);
+        if (q.resolvedAt) console.log(`  Resolved: ${q.resolvedAt} (${q.resolvedReason ?? "n/a"})`);
+        console.log("");
+      }
+    } catch (error) {
+      console.error(chalk.red("Error:"), error);
+      process.exit(1);
+    }
+  });
+
+immuneCmd
+  .command("report <experimentId>")
+  .description("Full trustworthy immune report for an experiment (evidence-backed)")
+  .option("--mind <name>", "Mind name", "default")
+  .option("--json", "Output machine-readable JSON")
+  .action(async (experimentId, options) => {
+    try {
+      const paths = defaultStorePaths(options.mind);
+      const history = await readExperimentHistory(paths);
+      const record = history.find((r) => r.id === experimentId);
+      if (!record) {
+        console.error(chalk.red(`Error: experiment not found: ${experimentId}`));
+        process.exit(1);
+      }
+
+      const qPaths = quarantineStorePaths(paths);
+      const quarantines = await readQuarantines(qPaths);
+      const expQuarantines = quarantines.filter((q) => q.experimentId === experimentId);
+
+      let immuneAssessment = undefined;
+      let immunitySignals = undefined;
+      if (typeof (record as any).immuneAssessment !== "undefined") {
+        immuneAssessment = (record as any).immuneAssessment;
+        immunitySignals = (record as any).immunitySignals;
+      }
+
+      const report = {
+        experimentId: record.id,
+        suiteId: record.suiteId,
+        startedAt: record.startedAt,
+        completedAt: record.completedAt,
+        mindId: record.mindId,
+        parentGenomeId: record.parentGenomeId,
+        parentVersion: record.parentVersion,
+        reproducibility: record.reproducibility,
+        evidenceHash: record.evidenceHash,
+        suiteVersion: record.suiteVersion,
+        baseline: {
+          qualityRate: record.baseline.qualityRate,
+          successRate: record.baseline.successRate,
+          verificationRate: record.baseline.verificationRate,
+          taskCount: record.baseline.taskCount,
+          taskRuns: record.baseline.taskRuns,
+          perTaskVariance: record.baseline.perTaskVariance,
+          confidence: record.baseline.confidence,
+        },
+        candidate: {
+          qualityRate: record.candidateResult.qualityRate,
+          successRate: record.candidateResult.successRate,
+          verificationRate: record.candidateResult.verificationRate,
+          taskCount: record.candidateResult.taskCount,
+          taskRuns: record.candidateResult.taskRuns,
+          perTaskVariance: record.candidateResult.perTaskVariance,
+          confidence: record.candidateResult.confidence,
+        },
+        deltas: record.deltas,
+        gate: {
+          decision: record.gate.decision,
+          reasons: record.gate.reasons,
+          checks: record.gate.checks,
+        },
+        immune: {
+          assessment: immuneAssessment ?? { disposition: "UNKNOWN", severity: "INFO", reason: "Not computed", failsCritical: false },
+          signals: immunitySignals ?? [],
+          quarantineCount: expQuarantines.filter((q) => q.decision === "QUARANTINED").length,
+        },
+        promotion: record.promotion,
+        rollback: record.rollback,
+        lineage: record.lineage,
+      };
+
+      if (options.json) {
+        console.log(JSON.stringify(report, null, 2));
+        return;
+      }
+
+      console.log("\n" + chalk.bold(`Immune Report — Experiment ${record.id}`));
+      console.log(chalk.gray("─".repeat(60)));
+      console.log(`Suite: ${record.suiteId}  Reproducibility: ${record.reproducibility}`);
+      console.log(`Evidence hash: ${String(record.evidenceHash ?? "n/a").slice(0, 16)}...`);
+      console.log(`\nBaseline:  quality ${report.baseline.qualityRate.toFixed(2)}  success ${report.baseline.successRate.toFixed(2)}  verified ${report.baseline.verificationRate.toFixed(2)}  tasks ${report.baseline.taskCount}  runs ${report.baseline.taskRuns}  variance ${(report.baseline.perTaskVariance ?? 0).toFixed(4)}  confidence ${report.baseline.confidence}`);
+      console.log(`Candidate: quality ${report.candidate.qualityRate.toFixed(2)}  success ${report.candidate.successRate.toFixed(2)}  verified ${report.candidate.verificationRate.toFixed(2)}  tasks ${report.candidate.taskCount}  runs ${report.candidate.taskRuns}  variance ${(report.candidate.perTaskVariance ?? 0).toFixed(4)}  confidence ${report.candidate.confidence}`);
+      console.log(`\nDeltas (cand − base):`);
+      console.log(`  success ${record.deltas.success_delta >= 0 ? "+" : ""}${record.deltas.success_delta.toFixed(2)}  quality ${record.deltas.quality_delta >= 0 ? "+" : ""}${record.deltas.quality_delta.toFixed(2)}  verified ${record.deltas.verification_delta >= 0 ? "+" : ""}${record.deltas.verification_delta.toFixed(2)}`);
+      console.log(`  latency ${record.deltas.latency_delta_ms === null ? "n/a" : `${record.deltas.latency_delta_ms >= 0 ? "+" : ""}${record.deltas.latency_delta_ms.toFixed(1)}ms`}  tokens ${record.deltas.token_delta === null ? "n/a" : String(record.deltas.token_delta)}`);
+      console.log(`\nGate Decision: ${record.gate.decision.toUpperCase()}`);
+      for (const reason of record.gate.reasons) console.log(`  - ${reason}`);
+      console.log(`\nImmune Assessment: ${immuneAssessment?.disposition ?? "UNKNOWN"}  Severity: ${immuneAssessment?.severity ?? "INFO"}`);
+      console.log(`Reason: ${immuneAssessment?.reason ?? "n/a"}`);
+      if (immuneAssessment?.failsCritical) console.log(chalk.red("  ⚠ CRITICAL signal — QUARANTINED"));
+      if (immunitySignals && immunitySignals.length > 0) {
+        console.log(`\nImmune Signals (${immunitySignals.length}):`);
+        for (const s of immunitySignals) {
+          const sevColor = s.severity === "CRITICAL" ? chalk.red : s.severity === "HIGH" ? chalk.red : s.severity === "WARNING" ? chalk.yellow : chalk.blue;
+          console.log(`  ${sevColor(s.kind)}  ${sevColor(s.severity)}  measured:${s.measured}  ${s.source}  ${s.message}`);
+        }
+      }
+      if (expQuarantines.length > 0) {
+        console.log(`\nQuarantine Records (${expQuarantines.length}):`);
+        for (const q of expQuarantines) {
+          const dColor = q.decision === "QUARANTINED" ? chalk.red : q.decision === "CLEARED_FROM_QUARANTINE" ? chalk.green : chalk.blue;
+          console.log(`  ${q.id.slice(0, 12)}  ${dColor(q.decision)}  ${q.problem}  ${q.severity}  ${q.quarantinedAt}`);
+        }
+      }
+      console.log(`\nLineage: ${record.lineage.join(" → ")}`);
+    } catch (error) {
       console.error(chalk.red("Error:"), error);
       process.exit(1);
     }
