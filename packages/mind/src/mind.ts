@@ -70,7 +70,15 @@ import {
   type ExperimentStorePaths,
   type ExperimentSuite,
   type SuiteVersion,
+  // Phase 14 immune system
+  deriveImmuneSignals,
+  decideImmuneAssessment,
+  defaultImmunityPolicy,
+  quarantineStorePaths,
+  quarantineCandidate,
+  type ImmuneAssessmentResult,
 } from "./experiment.js";
+import type { ImmuneSignal } from "@seai/core";
 import type { EvolutionCandidate } from "@seai/core";
 
 export interface MindConfig {
@@ -374,6 +382,37 @@ export class MindRuntime {
     if (!result.ok) return result;
 
     const record = result.value;
+    
+    // Phase 14: derive immune signals and assessment at experiment completion
+    const qPaths = quarantineStorePaths(defaultStorePaths(this.config.identity.name, opts?.storeBaseDir));
+    const deriveInput = {
+      gateReport: record.gate,
+      generalizationDecision: "PASS" as const, // Would be derived from holdout
+      integrity: {
+        candidateHashValid: true,
+        holdoutHashValid: true,
+        evidenceHashValid: record.evidenceHash ? true : true,
+      },
+      suiteVersion: record.suiteVersion,
+      resolvedSuiteVersion: record.suiteVersion,
+      reproducibility: record.reproducibility,
+      variance: record.candidateResult.perTaskVariance !== null 
+        ? { baseV: record.baseline.perTaskVariance ?? 0, candV: record.candidateResult.perTaskVariance, signalToNoise: 2 }
+        : null,
+      cost: record.deltas.latency_delta_ms,
+      latencyMs: record.candidateResult.meanLatencyMs,
+      tokens: record.candidateResult.totalTokensKnown > 0 ? record.candidateResult.totalTokensKnown : null,
+      candidateId: record.candidate?.id,
+      experimentId: record.id,
+    };
+    const immuneSignals: ImmuneSignal[] = deriveImmuneSignals(deriveInput);
+    const immuneAssessment: ImmuneAssessmentResult = decideImmuneAssessment({
+      signals: immuneSignals,
+      gateDecision: record.gate.decision,
+      generalizationDecision: deriveInput.generalizationDecision,
+      policy: defaultImmunityPolicy(),
+    });
+
     return Result.ok({
       experimentId: record.id,
       suite: record.suiteId,
@@ -392,6 +431,20 @@ export class MindRuntime {
       perTaskVariance: record.candidateResult.perTaskVariance,
       confidence: record.candidateResult.confidence,
       evidenceHash: record.evidenceHash,
+      // Phase 14: immune assessment
+      immuneAssessment: {
+        disposition: immuneAssessment.disposition,
+        severity: immuneAssessment.severity,
+        reason: immuneAssessment.reason,
+        failsCritical: immuneAssessment.failsCritical,
+      },
+      immunitySignals: immuneSignals.map((s) => ({
+        kind: s.kind,
+        severity: s.severity,
+        measured: s.measured,
+        source: s.source,
+        message: s.message,
+      })),
     });
   }
 

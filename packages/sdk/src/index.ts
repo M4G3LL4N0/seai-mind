@@ -45,12 +45,16 @@ export {
 export * from "@seai/mind";
 
 // Import for SDK-specific exports
-import { MindRuntime, createMindRuntime, MindConfig, MindTemplate, DEFAULT_MIND_TEMPLATE, detectAndCreateMind, defaultStorePaths, getActiveGenome, loadGenomeSnapshot, EXPERIMENT_SUITES } from "@seai/mind";
+import { MindRuntime, createMindRuntime, MindConfig, MindTemplate, DEFAULT_MIND_TEMPLATE, detectAndCreateMind, defaultStorePaths, getActiveGenome, loadGenomeSnapshot, EXPERIMENT_SUITES, defaultImmunityPolicy } from "@seai/mind";
 import { IdentitySchema, VersionSchema, HardwareProfileSchema, type Identity, type Version, type HardwareProfile } from "@seai/core";
 import { generateId, nowISO } from "@seai/core";
 import { createTelemetry, type Telemetry } from "@seai/core";
 import { detectHardware } from "@seai/core";
 import { discoverLocalRuntimes } from "@seai/runtime";
+
+// Phase 14: immune types for evolve result
+import type { ImmuneSignal, ImmuneAssessment } from "@seai/core";
+import type { ImmuneAssessmentResult } from "@seai/mind";
 
 export interface SEAIClientConfig {
   mindName: string;
@@ -176,7 +180,35 @@ export class SEAIClient {
         minHoldoutTasks?: number;
       };
     }
-  ): Promise<unknown> {
+  ): Promise<{
+    experimentId: string;
+    suite: string;
+    observation: string;
+    baselineQuality: number;
+    candidateQuality: number;
+    decision: "eligible" | "reject" | "hold";
+    reasons: string[];
+    reproducibility: "full" | "limited";
+    extraCandidates: Array<{ candidateId: string; quality: number; decision: "eligible" | "reject" | "hold" }>;
+    taskRuns: number;
+    perTaskVariance: number | null;
+    confidence: "high" | "medium" | "low" | "n/a";
+    evidenceHash?: string;
+    // Phase 14: immune assessment
+    immuneAssessment?: {
+      disposition: "CLEAR" | "WARNING" | "BLOCKED" | "QUARANTINED";
+      severity: "INFO" | "WARNING" | "HIGH" | "CRITICAL";
+      reason: string;
+      failsCritical: boolean;
+    };
+    immunitySignals?: Array<{
+      kind: string;
+      severity: "INFO" | "WARNING" | "HIGH" | "CRITICAL";
+      measured: boolean;
+      source: string;
+      message: string;
+    }>;
+  }> {
     if (!this.mind) throw new Error("Client not initialized");
     if (opts?.enableModels) {
       await this.enableLocalRuntimes();

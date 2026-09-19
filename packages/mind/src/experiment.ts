@@ -2328,11 +2328,14 @@ export async function promoteInStoreWithImmune(
 
   // Immune assessment at promotion decision point
   let assessment = immuneAssessment;
+  let derivedSignals: ImmuneSignal[] | undefined;
+  let deriveInputForQuarantine: DeriveImmuneSignalsInput | undefined;
   if (!assessment) {
     const deriveInput = buildDeriveInputFromRecord(record, chosen);
-    const signals = deriveImmuneSignals(deriveInput);
+    deriveInputForQuarantine = deriveInput;
+    derivedSignals = deriveImmuneSignals(deriveInput);
     assessment = decideImmuneAssessment({
-      signals,
+      signals: derivedSignals,
       gateDecision: chosen.gate.decision,
       generalizationDecision: deriveInput.generalizationDecision,
       policy: defaultImmunityPolicy(),
@@ -2343,6 +2346,7 @@ export async function promoteInStoreWithImmune(
   if (assessment.disposition === "BLOCKED" || assessment.disposition === "QUARANTINED") {
     // Auto-quarantine if critical
     if (assessment.disposition === "QUARANTINED") {
+      const signals = derivedSignals ?? (deriveInputForQuarantine ? deriveImmuneSignals(deriveInputForQuarantine) : []);
       await quarantineCandidate({
         paths,
         qPaths,
