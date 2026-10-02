@@ -7,7 +7,8 @@
     "build": "pnpm -r run build",
     "test": "pnpm -r run test",
     "lint": "tsc --noEmit -p tsconfig.json",
-    "typecheck": "pnpm -r run typecheck",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "verify": "pnpm build && pnpm typecheck && pnpm test",
     "doctor": "node scripts/doctor.js",
     "init": "node scripts/init.js",
     "bench": "node scripts/benchmark.js"
