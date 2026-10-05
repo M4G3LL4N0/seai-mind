@@ -1,9 +1,0 @@
-name: Smoke
-on:
-  push:
-    branches: [main, develop]
-jobs:
-  ping:
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo ok

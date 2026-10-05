@@ -102,10 +102,50 @@ jobs:
         run: pnpm typecheck
         working-directory: ./web
 
+  workspace:
+    name: Workspace Packages
+    runs-on: ubuntu-latest
+    needs: install
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.17.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      # packages/* resolve each other through dist/, which is not committed.
+      # pnpm -r builds the graph in topological order:
+      # core <- runtime/state <- mind <- sdk <- cli.
+      # Without this, tsc fails with TS2307 across every dependent package.
+      - name: Build workspace packages
+        run: pnpm -r build
+
+      - name: Typecheck workspace packages
+        run: pnpm -r typecheck
+
+      # Not run here: packages/* declare a "lint" script but ship no ESLint 9
+      # flat config, so `pnpm -r lint` fails on config resolution rather than
+      # on code. Adding it to this job would ship a permanently red check that
+      # verifies nothing. Tracked as a separate gap.
+
+      - name: Test workspace packages
+        run: pnpm -r test
+
   build:
     name: Build Web Platform
     runs-on: ubuntu-latest
-    needs: [lint, typecheck]
+    needs: [lint, typecheck, workspace]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -206,7 +246,7 @@ jobs:
   deploy-preview:
     name: Deploy Preview
     runs-on: ubuntu-latest
-    needs: [build, test, security]
+    needs: [build, test, security, workspace]
     if: github.event_name == 'pull_request'
     steps:
       - name: Checkout repository
@@ -231,7 +271,7 @@ jobs:
   deploy-production:
     name: Deploy Production
     runs-on: ubuntu-latest
-    needs: [build, test, security]
+    needs: [build, test, security, workspace]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - name: Checkout repository
