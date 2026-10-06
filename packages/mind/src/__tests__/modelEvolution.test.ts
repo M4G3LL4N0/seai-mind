@@ -28,6 +28,18 @@ import {
 } from "@seai/core";
 import { createMemoryEngine, createSkillEngine, createToolEngine } from "@seai/state";
 
+/**
+ * Result failures carry an Error subclass. `JSON.stringify` on an Error returns
+ * `{}` because `message`, `name` and `stack` are non-enumerable, so a plain
+ * stringify reports an empty payload and hides the actual cause.
+ */
+function describeResult(r: { ok: boolean; error?: unknown }): string {
+  if (r.ok) return "";
+  const e = r.error as { name?: string; code?: string; message?: string } | undefined;
+  return [e?.name, e?.code, e?.message].filter(Boolean).join(": ") || String(r.error);
+}
+
+
 function freshDir() {
   return mkdtempSync(join(tmpdir(), "seai-modevo-"));
 }
@@ -48,7 +60,7 @@ async function bootMind(name: string) {
   const cfg = createMindConfigFromTemplate(DEFAULT_MIND_TEMPLATE, testIdentity(name));
   const runtime = createMindRuntime(cfg);
   const init = await runtime.initialize();
-  expect(init.ok).toBe(true);
+  expect(init.ok, `${describeResult(init)}`).toBe(true);
   return { cfg, runtime };
 }
 
@@ -131,7 +143,7 @@ describe("model-evolution/fixture-plumbing REAL", () => {
       { type: "chat", input: "Say hello" } as never,
       fixtureContext(generateId(), true)
     );
-    expect(res.ok).toBe(true);
+    expect(res.ok, `${describeResult(res)}`).toBe(true);
     if (!res.ok) return;
     expect(res.value.executionPath).toBe("model");
     expect(typeof res.value.modelUsed).toBe("string");
@@ -164,7 +176,7 @@ describe("model-evolution/fixture-plumbing REAL", () => {
       { type: "chat", input: "Say hello" } as never,
       fixtureContext(mindId, true)
     );
-    expect(withModels.ok).toBe(true);
+    expect(withModels.ok, `${describeResult(withModels)}`).toBe(true);
     // Same input, no models available: must fail honestly, never serve the
     // fixture's cached mock as if a model executed.
     const withoutModels = await cognition.processTask(
@@ -186,7 +198,7 @@ describe("model-evolution/multi-candidate REAL", () => {
         { name: "json-again", config: { deterministicFormat: "json" } },
       ],
     });
-    expect(rec.ok).toBe(true);
+    expect(rec.ok, `${describeResult(rec)}`).toBe(true);
     if (!rec.ok) return;
     expect(rec.value.extraCandidates.length).toBe(1);
     // Identical workload across all three arms.
@@ -198,7 +210,7 @@ describe("model-evolution/multi-candidate REAL", () => {
     // Promote the EXTRA candidate explicitly by id.
     const extraId = rec.value.extraCandidates[0]?.candidate.id as string;
     const promoted = await runtime.promoteExperiment(rec.value.id, { storeBaseDir, candidateId: extraId });
-    expect(promoted.ok).toBe(true);
+    expect(promoted.ok, `${describeResult(promoted)}`).toBe(true);
     await runtime.shutdown();
   }, 120000);
 });
@@ -208,7 +220,7 @@ describe("model-evolution/reproducibility REAL", () => {
     const storeBaseDir = freshDir();
     const { runtime } = await bootMind(`Repro2-${Date.now()}`);
     const rec = await runtime.runExperiment(ARITHMETIC_FORMAT_SUITE_V1, { storeBaseDir });
-    expect(rec.ok).toBe(true);
+    expect(rec.ok, `${describeResult(rec)}`).toBe(true);
     if (!rec.ok) return;
     expect(rec.value.reproducibility).toBe("full");
     expect(rec.value.sampling).toMatchObject({ temperature: 0.7 });
@@ -221,7 +233,7 @@ describe("model-evolution/evidence-linkage REAL", () => {
     const storeBaseDir = freshDir();
     const { runtime } = await bootMind(`Evidence-${Date.now()}`);
     const rec = await runtime.runExperiment(ARITHMETIC_FORMAT_SUITE_V1, { storeBaseDir });
-    expect(rec.ok).toBe(true);
+    expect(rec.ok, `${describeResult(rec)}`).toBe(true);
     if (!rec.ok || !rec.value.candidate) return;
     const failedIds = new Set(
       rec.value.baseline.measurements.filter((m) => m.success && !m.outputMatches).map((m) => m.taskId)
@@ -288,7 +300,7 @@ describe.runIf(ollamaLive)("model-evolution/live REAL (requires Ollama)", () => 
       await new Promise((r) => setTimeout(r, 8000));
       rec = await runOnce();
     }
-    expect(rec.ok).toBe(true);
+    expect(rec.ok, `${describeResult(rec)}`).toBe(true);
     if (!rec.ok) return;
     expect(rec.value.reproducibility).toBe("limited");
     expect(rec.value.sampling).toMatchObject({ temperature: 0.7 });

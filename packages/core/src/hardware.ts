@@ -49,8 +49,18 @@ export class DarwinHardwareDetector implements HardwareDetector {
   }
 
   private async detectCPU() {
- const cpus = os.cpus();
-    const totalCpus = cpus.length;
+    const cpus = os.cpus();
+    // os.cpus() can legitimately return an empty array: it shells out on some
+    // platforms, and it is empty inside some container and test-sandbox
+    // environments. A GitHub Actions runner hits this, which made every
+    // packages/mind test fail at initialize() with
+    // "Invalid hardware profile: cpu.cores Number must be greater than 0".
+    //
+    // The schema requires a positive integer because downstream scheduling
+    // divides by it, so the honest floor is 1 rather than 0. Reporting an
+    // undetectable count as 1 core is a conservative lie; letting the profile
+    // fail to construct took the whole runtime down with it.
+    const totalCpus = cpus.length > 0 ? cpus.length : 1;
     
     let model = "Unknown";
     let frequencyMHz = 0;
@@ -410,8 +420,14 @@ export class LinuxHardwareDetector implements HardwareDetector {
       
       return {
         architecture: getValue("Architecture") || process.arch,
-        cores: parseInt(getValue("CPU(s)") || "0", 10),
-        threads: parseInt(getValue("Thread(s) per core") || "1", 10) * parseInt(getValue("CPU(s)") || "0", 10),
+        cores: Math.max(1, parseInt(getValue("CPU(s)") || "1", 10)),
+        // Guard both factors: a missing CPU(s) previously produced
+        // threads: 0, which the schema also rejects.
+        threads: Math.max(
+          1,
+          parseInt(getValue("Thread(s) per core") || "1", 10) *
+            Math.max(1, parseInt(getValue("CPU(s)") || "1", 10)),
+        ),
         model: getValue("Model name"),
         frequencyMHz: parseFloat(getValue("CPU max MHz") || getValue("CPU MHz") || "0"),
       };

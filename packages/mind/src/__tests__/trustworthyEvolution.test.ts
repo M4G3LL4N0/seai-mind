@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { appendFile } from "node:fs/promises";
 import { createTelemetry, generateId, nowISO, Result } from "@seai/core";
 import {
+
+
   createMindRuntime,
   createMindConfigFromTemplate,
   DEFAULT_MIND_TEMPLATE,
@@ -26,6 +28,17 @@ import {
   type TaskMeasurement,
 } from "../index.js";
 
+/**
+ * Result failures carry an Error subclass. `JSON.stringify` on an Error returns
+ * `{}` because `message`, `name` and `stack` are non-enumerable, so a plain
+ * stringify reports an empty payload and hides the actual cause.
+ */
+function describeResult(r: { ok: boolean; error?: unknown }): string {
+  if (r.ok) return "";
+  const e = r.error as { name?: string; code?: string; message?: string } | undefined;
+  return [e?.name, e?.code, e?.message].filter(Boolean).join(": ") || String(r.error);
+}
+
 function freshDir() {
   return mkdtempSync(join(tmpdir(), "seai-trust-"));
 }
@@ -46,7 +59,7 @@ async function bootMind(name: string) {
   const cfg = createMindConfigFromTemplate(DEFAULT_MIND_TEMPLATE, testIdentity(name));
   const runtime = createMindRuntime(cfg);
   const init = await runtime.initialize();
-  expect(init.ok).toBe(true);
+  expect(init.ok, `${describeResult(init)}`).toBe(true);
   return { cfg, runtime };
 }
 
@@ -375,7 +388,7 @@ describe("trustworthy/anti-overfitting REAL", () => {
 
     const res = await runtime.runExperiment(suite, { storeBaseDir });
     await runtime.shutdown();
-    expect(res.ok).toBe(true);
+    expect(res.ok, `${describeResult(res)}`).toBe(true);
     if (!res.ok) return;
     const record = res.value;
 
@@ -439,7 +452,7 @@ describe.runIf(ollamaLive)("trustworthy/anti-overfitting-live REAL (requires Oll
       taskTimeoutMs: 60000,
     });
     await runtime.shutdown();
-    expect(res.ok).toBe(true);
+    expect(res.ok, `${describeResult(res)}`).toBe(true);
     if (!res.ok) return;
     const record = res.value;
 

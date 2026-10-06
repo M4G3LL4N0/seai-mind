@@ -21,6 +21,18 @@ import {
 } from "../index.js";
 import { generateId, nowISO } from "@seai/core";
 
+/**
+ * Result failures carry an Error subclass. `JSON.stringify` on an Error returns
+ * `{}` because `message`, `name` and `stack` are non-enumerable, so a plain
+ * stringify reports an empty payload and hides the actual cause.
+ */
+function describeResult(r: { ok: boolean; error?: unknown }): string {
+  if (r.ok) return "";
+  const e = r.error as { name?: string; code?: string; message?: string } | undefined;
+  return [e?.name, e?.code, e?.message].filter(Boolean).join(": ") || String(r.error);
+}
+
+
 function freshDir() {
   return mkdtempSync(join(tmpdir(), "seai-evo-"));
 }
@@ -41,7 +53,7 @@ async function bootMind(name: string) {
   const cfg = createMindConfigFromTemplate(DEFAULT_MIND_TEMPLATE, testIdentity(name));
   const runtime = createMindRuntime(cfg);
   const init = await runtime.initialize();
-  expect(init.ok).toBe(true);
+  expect(init.ok, `${describeResult(init)}`).toBe(true);
   return { cfg, runtime };
 }
 
@@ -125,7 +137,7 @@ describe("evolution/sandbox REAL", () => {
     const storeBaseDir = freshDir();
     const { cfg, runtime } = await bootMind(`SandboxCheck-${Date.now()}`);
     const rec = await runtime.runExperiment(ARITHMETIC_FORMAT_SUITE_V1, { storeBaseDir });
-    expect(rec.ok).toBe(true);
+    expect(rec.ok, `${describeResult(rec)}`).toBe(true);
     // Production (live) memory holds no experiment residue: the arms ran on
     // isolated storage by construction.
     const live = await runtime.getMemoryEngine().retrieve(
@@ -133,7 +145,7 @@ describe("evolution/sandbox REAL", () => {
       { limit: 100 },
       { userId: "t", sessionId: "t", permissions: [], privacyLevel: "internal", securityLevel: "low" } as never
     );
-    expect(live.ok).toBe(true);
+    expect(live.ok, `${describeResult(live)}`).toBe(true);
     if (live.ok) expect(live.value.length).toBe(0);
     await runtime.shutdown();
   });
@@ -142,7 +154,7 @@ describe("evolution/sandbox REAL", () => {
     const storeBaseDir = freshDir();
     const { runtime } = await bootMind(`WorkloadCheck-${Date.now()}`);
     const rec = await runtime.runExperiment(ARITHMETIC_FORMAT_SUITE_V1, { storeBaseDir });
-    expect(rec.ok).toBe(true);
+    expect(rec.ok, `${describeResult(rec)}`).toBe(true);
     if (!rec.ok) return;
     const suiteIds = ARITHMETIC_FORMAT_SUITE_V1.tasks.map((t) => t.id);
     expect(rec.value.baseline.measurements.map((m) => m.taskId)).toEqual(suiteIds);
@@ -154,7 +166,7 @@ describe("evolution/sandbox REAL", () => {
     const storeBaseDir = freshDir();
     const { runtime } = await bootMind(`EvidenceCheck-${Date.now()}`);
     const rec = await runtime.runExperiment(ARITHMETIC_FORMAT_SUITE_V1, { storeBaseDir });
-    expect(rec.ok).toBe(true);
+    expect(rec.ok, `${describeResult(rec)}`).toBe(true);
     if (!rec.ok) return;
     expect(rec.value.baseline.measurements.length).toBe(10);
     for (const m of rec.value.baseline.measurements) {
@@ -227,7 +239,7 @@ describe("evolution/promotion-and-rollback REAL", () => {
 
     // 1. Experiment decides from real measurements.
     const rec = await runtime.runExperiment(ARITHMETIC_FORMAT_SUITE_V1, { storeBaseDir });
-    expect(rec.ok).toBe(true);
+    expect(rec.ok, `${describeResult(rec)}`).toBe(true);
     if (!rec.ok) return;
     expect(rec.value.gate.decision).toBe("eligible");
     // 2. Never auto-promoted.
@@ -235,13 +247,13 @@ describe("evolution/promotion-and-rollback REAL", () => {
 
     // 3. Explicit promotion → new genome version + live adoption.
     const promoted = await runtime.promoteExperiment(rec.value.id, { storeBaseDir });
-    expect(promoted.ok).toBe(true);
+    expect(promoted.ok, `${describeResult(promoted)}`).toBe(true);
     if (!promoted.ok) return;
     expect(promoted.value.version.patch).toBe(rec.value.parentVersion.patch + 1);
     expect(promoted.value.lineage).toContain(rec.value.parentGenomeId);
 
     const after = await runtime.runTask({ type: "reasoning", input: "What is 9 * 9? Answer in JSON." } as never);
-    expect(after.ok).toBe(true);
+    expect(after.ok, `${describeResult(after)}`).toBe(true);
     if (after.ok) {
       expect(typeof after.value.result).toBe("string");
       expect(JSON.parse(after.value.result as string)).toEqual({ value: 81 });
@@ -258,12 +270,12 @@ describe("evolution/promotion-and-rollback REAL", () => {
 
     // 5. Rollback restores the parent behavior with lineage intact.
     const rolled = await runtime.rollbackExperiment("regression drill", { storeBaseDir });
-    expect(rolled.ok).toBe(true);
+    expect(rolled.ok, `${describeResult(rolled)}`).toBe(true);
     if (!rolled.ok) return;
     expect(rolled.value.lineage).toContain(promoted.value.id);
 
     const rawAgain = await runtime.runTask({ type: "reasoning", input: "What is 9 * 9? Answer in JSON." } as never);
-    expect(rawAgain.ok).toBe(true);
+    expect(rawAgain.ok, `${describeResult(rawAgain)}`).toBe(true);
     if (rawAgain.ok) expect(rawAgain.value.result).toBe(81);
 
     const historyAfter = await runtime.getEvolutionHistory({ storeBaseDir });
@@ -274,7 +286,7 @@ describe("evolution/promotion-and-rollback REAL", () => {
     const again = await runtime.promoteExperiment(rec.value.id, { storeBaseDir });
     // NOTE: a rollback happened above, so re-promotion is legal again and
     // must produce a NEW genome version (branch continuation, not duplicate).
-    expect(again.ok).toBe(true);
+    expect(again.ok, `${describeResult(again)}`).toBe(true);
     if (again.ok) {
       expect(again.value.id).not.toBe(promoted.value.id);
       expect(again.value.parentGenome).toBe(rec.value.parentGenomeId);
@@ -326,7 +338,7 @@ describe("evolution/isolation REAL", () => {
     const a = await bootMind(`IsoA-${Date.now()}`);
     const b = await bootMind(`IsoB-${Date.now()}`);
     const recA = await a.runtime.runExperiment(ARITHMETIC_FORMAT_SUITE_V1, { storeBaseDir });
-    expect(recA.ok).toBe(true);
+    expect(recA.ok, `${describeResult(recA)}`).toBe(true);
     if (!recA.ok) return;
     // B's genome space knows nothing of A's experiment.
     const latestB = await b.runtime.getGenomeEngine().getLatestGenome(b.cfg.identity.id);
@@ -343,7 +355,7 @@ describe("evolution/store REAL", () => {
     const storeBaseDir = freshDir();
     const { runtime } = await bootMind(`Durable-${Date.now()}`);
     const rec = await runtime.runExperiment(ARITHMETIC_FORMAT_SUITE_V1, { storeBaseDir });
-    expect(rec.ok).toBe(true);
+    expect(rec.ok, `${describeResult(rec)}`).toBe(true);
     if (!rec.ok) return;
     await runtime.shutdown();
 
