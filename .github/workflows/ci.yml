@@ -51,6 +51,18 @@ jobs:
     name: Lint
     runs-on: ubuntu-latest
     needs: install
+    # Non-blocking, deliberately. This job cannot pass as configured:
+    #   * `next lint` in Next 14 only discovers .eslintrc*, but web/ ships a
+    #     flat eslint.config.mjs, so it falls through to an interactive
+    #     "How would you like to configure ESLint?" prompt that cannot be
+    #     answered on a runner.
+    #   * Running `eslint` directly resolves ESLint 8 from the workspace and
+    #     cannot resolve eslint-plugin-next from web/node_modules.
+    # Marking it continue-on-error keeps it visible without pretending it
+    # verifies anything. Tracked as a real gap: install the flat-config deps
+    # and migrate to `eslint` directly, or move to Next 15 where `next lint`
+    # understands flat config.
+    continue-on-error: true
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
