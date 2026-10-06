@@ -260,8 +260,11 @@ jobs:
           path: ./web/.next
 
       - name: Deploy to Vercel Preview
+        # No `if:` guard here on purpose. `secrets` is not a valid context in
+        # a step-level condition; referencing it makes the parser reject this
+        # whole file, which produces a run with zero jobs and no logs.
+        # continue-on-error handles a repository without Vercel credentials.
         uses: amondnet/vercel-action@v25
-        if: ${{ secrets.VERCEL_TOKEN != '' }}
         with:
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
           vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
@@ -285,8 +288,11 @@ jobs:
           path: ./web/.next
 
       - name: Deploy to Vercel Production
+        # No `if:` guard here on purpose. `secrets` is not a valid context in
+        # a step-level condition; referencing it makes the parser reject this
+        # whole file, which produces a run with zero jobs and no logs.
+        # continue-on-error handles a repository without Vercel credentials.
         uses: amondnet/vercel-action@v25
-        if: ${{ secrets.VERCEL_TOKEN != '' }}
         with:
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
           vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
