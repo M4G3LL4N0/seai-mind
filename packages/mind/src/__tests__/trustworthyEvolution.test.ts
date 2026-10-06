@@ -46,7 +46,7 @@ async function bootMind(name: string) {
   const cfg = createMindConfigFromTemplate(DEFAULT_MIND_TEMPLATE, testIdentity(name));
   const runtime = createMindRuntime(cfg);
   const init = await runtime.initialize();
-  expect(init.ok).toBe(true);
+  expect(init.ok, `${JSON.stringify(init.ok ? "" : init.error)}`).toBe(true);
   return { cfg, runtime };
 }
 
@@ -375,7 +375,7 @@ describe("trustworthy/anti-overfitting REAL", () => {
 
     const res = await runtime.runExperiment(suite, { storeBaseDir });
     await runtime.shutdown();
-    expect(res.ok).toBe(true);
+    expect(res.ok, `${JSON.stringify(res.ok ? "" : res.error)}`).toBe(true);
     if (!res.ok) return;
     const record = res.value;
 
@@ -439,7 +439,7 @@ describe.runIf(ollamaLive)("trustworthy/anti-overfitting-live REAL (requires Oll
       taskTimeoutMs: 60000,
     });
     await runtime.shutdown();
-    expect(res.ok).toBe(true);
+    expect(res.ok, `${JSON.stringify(res.ok ? "" : res.error)}`).toBe(true);
     if (!res.ok) return;
     const record = res.value;
 

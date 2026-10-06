@@ -149,7 +149,7 @@ describe("mind/deterministic REAL (P2)", () => {
       { type: "reasoning", input: "What is 2 + 2?" } as never,
       taskContext(mindId)
     );
-    expect(res.ok).toBe(true);
+    expect(res.ok, `${JSON.stringify(res.ok ? "" : res.error)}`).toBe(true);
     if (!res.ok) return;
     expect(res.value.result).toBe(4);
     expect(res.value.executionPath).toBe("deterministic");
@@ -183,10 +183,10 @@ describe("mind/experience REAL (P3)", () => {
     } as never);
     const runtime = createMindRuntime(cfg);
     const init = await runtime.initialize();
-    expect(init.ok).toBe(true);
+    expect(init.ok, `${JSON.stringify(init.ok ? "" : init.error)}`).toBe(true);
 
     const res = await runtime.runTask({ type: "reasoning", input: "What is 2 + 2?" } as never);
-    expect(res.ok).toBe(true);
+    expect(res.ok, `${JSON.stringify(res.ok ? "" : res.error)}`).toBe(true);
     if (!res.ok) return;
     expect(res.value.result).toBe(4);
 
@@ -199,7 +199,7 @@ describe("mind/experience REAL (P3)", () => {
         privacyLevel: "internal",
         securityLevel: "low",
       } as never);
-    expect(mem.ok).toBe(true);
+    expect(mem.ok, `${JSON.stringify(mem.ok ? "" : mem.error)}`).toBe(true);
     if (!mem.ok) return;
     const experiences = mem.value.filter(
       (m) => (m.content as Record<string, unknown>)?.["kind"] === "task-experience"
@@ -232,7 +232,7 @@ describe("mind/evaluation-of-execution REAL (P3)", () => {
       4,
       { taskId: "t-1", goal: "arithmetic", input: "What is 2 + 2?", expectedOutput: 4 } as never
     );
-    expect(res.ok).toBe(true);
+    expect(res.ok, `${JSON.stringify(res.ok ? "" : res.error)}`).toBe(true);
     if (!res.ok) return;
     expect(res.value.passed).toBe(true);
     expect(res.value.overallScore).toBe(1);
@@ -270,7 +270,7 @@ describe.runIf(ollamaLive)("mind/live-model REAL (P2, requires Ollama)", () => {
 
     await runtime.registerRuntime(createOllamaRuntime());
     const res = await runtime.runTask({ type: "chat", input: "Reply with exactly: OK" } as never);
-    expect(res.ok).toBe(true);
+    expect(res.ok, `${JSON.stringify(res.ok ? "" : res.error)}`).toBe(true);
     if (!res.ok) return;
     expect(res.value.executionPath).toBe("model");
     expect(String(res.value.result)).toContain("OK");
@@ -293,7 +293,7 @@ describe.runIf(ollamaLive)("mind/live-model REAL (P2, requires Ollama)", () => {
       res.value.result,
       { taskId: res.value.id, goal: "live", input: "Reply with exactly: OK" } as never
     );
-    expect(evaluation.ok).toBe(true);
+    expect(evaluation.ok, `${JSON.stringify(evaluation.ok ? "" : evaluation.error)}`).toBe(true);
     if (evaluation.ok) expect(evaluation.value.passed).toBe(true);
 
     await runtime.shutdown();
