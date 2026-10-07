@@ -73,3 +73,103 @@ and `docs/audit/` (ground truth, compression results, GitHub/Vercel status).
   OS-level sandboxing, weight evolution.
 
 No fake capability is presented as real. See `docs/audit/COMPRESSION_RESULTS.md`.
+
+<!-- TRILLIONX:presentation:begin -->
+
+### Animated surfaces
+
+Generated from this repository's own source tree: every count, route and module below was measured, not written by hand.
+
+#### Identity
+
+<picture>
+  <source media="(prefers-reduced-motion: reduce)" srcset="https://raw.githubusercontent.com/M4G3LL4N0/seai-mind/main/.github-art/surfaces/hero-reduced.svg">
+  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/M4G3LL4N0/seai-mind/main/.github-art/surfaces/hero-light.svg">
+  <img alt="Identity diagram for seai-mind" src="https://raw.githubusercontent.com/M4G3LL4N0/seai-mind/main/.github-art/surfaces/hero.svg">
+</picture>
+
+#### Entry points
+
+<picture>
+  <source media="(prefers-reduced-motion: reduce)" srcset="https://raw.githubusercontent.com/M4G3LL4N0/seai-mind/main/.github-art/surfaces/terminal-reduced.svg">
+  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/M4G3LL4N0/seai-mind/main/.github-art/surfaces/terminal-light.svg">
+  <img alt="Entry points diagram for seai-mind" src="https://raw.githubusercontent.com/M4G3LL4N0/seai-mind/main/.github-art/surfaces/terminal.svg">
+</picture>
+
+#### Modules
+
+<picture>
+  <source media="(prefers-reduced-motion: reduce)" srcset="https://raw.githubusercontent.com/M4G3LL4N0/seai-mind/main/.github-art/surfaces/architecture-reduced.svg">
+  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/M4G3LL4N0/seai-mind/main/.github-art/surfaces/architecture-light.svg">
+  <img alt="Modules diagram for seai-mind" src="https://raw.githubusercontent.com/M4G3LL4N0/seai-mind/main/.github-art/surfaces/architecture.svg">
+</picture>
+
+#### Primitives
+
+<picture>
+  <source media="(prefers-reduced-motion: reduce)" srcset="https://raw.githubusercontent.com/M4G3LL4N0/seai-mind/main/.github-art/surfaces/state_machine-reduced.svg">
+  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/M4G3LL4N0/seai-mind/main/.github-art/surfaces/state_machine-light.svg">
+  <img alt="Primitives diagram for seai-mind" src="https://raw.githubusercontent.com/M4G3LL4N0/seai-mind/main/.github-art/surfaces/state_machine.svg">
+</picture>
+
+#### Composition
+
+<picture>
+  <source media="(prefers-reduced-motion: reduce)" srcset="https://raw.githubusercontent.com/M4G3LL4N0/seai-mind/main/.github-art/surfaces/component_map-reduced.svg">
+  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/M4G3LL4N0/seai-mind/main/.github-art/surfaces/component_map-light.svg">
+  <img alt="Composition diagram for seai-mind" src="https://raw.githubusercontent.com/M4G3LL4N0/seai-mind/main/.github-art/surfaces/component_map.svg">
+</picture>
+
+#### Build and tests
+
+<picture>
+  <source media="(prefers-reduced-motion: reduce)" srcset="https://raw.githubusercontent.com/M4G3LL4N0/seai-mind/main/.github-art/surfaces/build-reduced.svg">
+  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/M4G3LL4N0/seai-mind/main/.github-art/surfaces/build-light.svg">
+  <img alt="Build and tests diagram for seai-mind" src="https://raw.githubusercontent.com/M4G3LL4N0/seai-mind/main/.github-art/surfaces/build.svg">
+</picture>
+
+#### Workflow
+
+<picture>
+  <source media="(prefers-reduced-motion: reduce)" srcset="https://raw.githubusercontent.com/M4G3LL4N0/seai-mind/main/.github-art/surfaces/workflow-reduced.svg">
+  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/M4G3LL4N0/seai-mind/main/.github-art/surfaces/workflow-light.svg">
+  <img alt="Workflow diagram for seai-mind" src="https://raw.githubusercontent.com/M4G3LL4N0/seai-mind/main/.github-art/surfaces/workflow.svg">
+</picture>
+
+#### Domain
+
+<picture>
+  <source media="(prefers-reduced-motion: reduce)" srcset="https://raw.githubusercontent.com/M4G3LL4N0/seai-mind/main/.github-art/surfaces/domain-reduced.svg">
+  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/M4G3LL4N0/seai-mind/main/.github-art/surfaces/domain-light.svg">
+  <img alt="Domain diagram for seai-mind" src="https://raw.githubusercontent.com/M4G3LL4N0/seai-mind/main/.github-art/surfaces/domain.svg">
+</picture>
+
+#### Identity object
+
+<picture>
+  <source media="(prefers-reduced-motion: reduce)" srcset="https://raw.githubusercontent.com/M4G3LL4N0/seai-mind/main/.github-art/surfaces/footer-reduced.svg">
+  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/M4G3LL4N0/seai-mind/main/.github-art/surfaces/footer-light.svg">
+  <img alt="Identity object diagram for seai-mind" src="https://raw.githubusercontent.com/M4G3LL4N0/seai-mind/main/.github-art/surfaces/footer.svg">
+</picture>
+
+<!-- TRILLIONX:presentation:end -->
+
+<!-- TRILLIONX:evidence:begin -->
+
+## What is measurable here
+
+Generated by `.github-art` from the source tree at publish time.
+
+| Signal | Value |
+| --- | --- |
+| HTTP routes | 0 |
+| Entry points | 7 |
+| Module roots | 8 |
+| Test files | 12 |
+| CI workflows | 1 |
+| Distinctive stack | Zod |
+| Status | LIVE |
+| Evidence confidence | E3 |
+| Animated surfaces | 9 |
+
+<!-- TRILLIONX:evidence:end -->
