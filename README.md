@@ -1,175 +1,101 @@
-# SE-AI Mind (Darwin 0.1)
+# seai-mind
 
-<p align="center">
-  <picture>
-    <source media="(prefers-reduced-motion: reduce)" srcset="assets/hero/hero-reduced.svg">
-    <source media="(prefers-color-scheme: light)" srcset="assets/hero/hero-light.svg">
-    <img src="assets/hero/hero-motion.svg" alt="SE-AI Mind — animated project plate showing objective &rarr; plan &rarr; constrain &rarr; verify. Motion depicts this project's real state transition." width="100%">
-  </picture>
-</p>
+> A small kernel for a mind that can be measured. Built in Zod. 7 entry points (index.ts). Live at seai-mind.vercel.app.
 
-<p align="center">
-  <picture>
-    <source media="(prefers-reduced-motion: reduce)" srcset="assets/hero/computational-dark.svg">
-    <source media="(prefers-color-scheme: light)" srcset="assets/hero/computational-light.svg">
-    <img src="assets/hero/computational-motion.svg" alt="State machine: objective &rarr; plan &rarr; constrain &rarr; verify." width="100%">
-  </picture>
-</p>
+The implementation summary below is intentionally conservative. Claims from NORTHSTAR are not presented as shipped functionality.
 
-Open-source self-evolving AI kernel. Small kernel, growing intelligence:
-Minds + Models + Memory + Skills + Tools + Evolution + Evaluation.
+- [GitHub repository](https://github.com/M4G3LL4N0/seai-mind)
+- [Project site](https://seai-mind.vercel.app)
 
-## Quickstart
+<!-- NOAERTH_IMAGE_SLOT: seai-mind/hero -->
 
-```bash
+## What it is
+
+A small kernel for a mind that can be measured. Built in Zod. 7 entry points (index.ts). Live at seai-mind.vercel.app.
+
+This repository is part of the NOAERTH venture ecosystem. The current public-facing evidence identifies it as a early-stage project rather than a production-ready system.
+
+## Capabilities
+
+### Available evidence
+
+- The repository contains the implementation and documentation associated with the project description above.
+- The technology signals currently visible in the local project are listed in the technical notes below.
+- No additional capability is asserted here without a direct implementation reference.
+
+### Experimental or planned
+
+Roadmap intent is deliberately not represented as shipped functionality. Review NORTHSTAR and source implementation together before adding future-facing claims.
+
+<!-- NOAERTH_IMAGE_SLOT: seai-mind/workflow -->
+
+## How it works
+
+The current evidence supports a repository-level application or tool workflow, but does not provide enough verified detail in the Part 1 record to publish a component-level architecture diagram. The architecture slot is reserved for a deterministic diagram after the source flow is reviewed.
+
+<!-- NOAERTH_IMAGE_SLOT: seai-mind/architecture -->
+
+## Quick start
+
+### Prerequisites
+
+- A runtime suitable for `Node.js`.
+- A clean checkout of this repository.
+
+### Install
+
+```sh
 pnpm install
-pnpm build
-pnpm test
-
-node packages/cli/dist/cli.js doctor
-node packages/cli/dist/cli.js init --name DarwinTest
-node packages/cli/dist/cli.js run "What is 2 + 2?"
 ```
 
-With a local Ollama server running, model tasks execute for real; without
-one, the system fails honestly instead of faking inference.
+### Run locally
 
-## First evolution loop (deterministic, no model needed)
-
-```bash
-node packages/cli/dist/cli.js evolve propose --mind default
-node packages/cli/dist/cli.js evolve history --mind default
-node packages/cli/dist/cli.js evolve promote <experimentId> --mind default
-node packages/cli/dist/cli.js run "What is 3 + 3? Answer in JSON." --mind default
-node packages/cli/dist/cli.js evolve rollback --mind default
+```sh
+Use the repository's documented entry point after installing dependencies.
 ```
 
-## Model-backed evolution (needs a local runtime, e.g. Ollama)
+### Build
 
-```bash
-node packages/cli/dist/cli.js evolve propose --mind default --suite extraction-json-v1 --models --candidates json-only-prompt,polite-json-prompt
-node packages/cli/dist/cli.js evolve compare <experimentId> --mind default
+```sh
+pnpm run build
 ```
 
-`compare` shows per-arm measurements and deltas. Promotion stays explicit;
-`--models` is required — without a reachable runtime the suite holds honestly.
+### Test
 
-## Architecture (7 build units)
+```sh
+pnpm run test
+```
 
-`core` ← `runtime`, `state` ← `mind` ← `sdk` ← `cli`; `web/` standalone.
-See `docs/architecture/` (MINIMAL_KERNEL, MIND_MODEL, MEMORY_MODEL,
-RUNTIME_BOUNDARY, EXECUTION_MODEL, EVOLUTION_MODEL, EVOLUTION_EXPERIMENTS,
-EVOLUTION_GATES, INTELLIGENCE_GENOME, GENOME_MODEL, COGNITIVE_COMPILER)
-and `docs/audit/` (ground truth, compression results, GitHub/Vercel status).
+Commands are included only when they were detected in the repository manifest; verify environment-specific requirements before deployment.
 
-## Honest status
+## Technical notes
 
-- REAL: Mind lifecycle, Mind-isolated memory, deterministic + Ollama model
-  execution, routing over healthy runtimes, real evolution experiments with
-  measured gates, explicit promotion, real rollback, durable history.
-- PARTIAL: tools/skills (some executors stubbed), evolution reviews beyond
-  the gate checks, compiler optimization.
-- STUB (labeled in code/docs): MLX adapter, local test fixture, LLM-judge,
-  OS-level sandboxing, weight evolution.
+- **Primary language:** JavaScript/TypeScript
+- **Runtime:** Node.js
+- **Package manager:** pnpm
+- **Framework and integration signals:** Go, Rust
+- **Entry-point signals:** package.json
+- **Test evidence:** No test evidence recorded in the inventory
+- **Repository topics:** `typescript`, `benchmark`, `cli`, `live`, `next-js`, `packages`, `policy`, `react`
 
-No fake capability is presented as real. See `docs/audit/COMPRESSION_RESULTS.md`.
+## Status and roadmap
 
-<!-- TRILLIONX:presentation:begin -->
+**Current status:** Early-stage project.
 
-### Animated surfaces
+**Current:** The repository and its documented implementation are available for inspection.
 
-Generated from this repository's own source tree: every count, route and module below was measured, not written by hand.
+**Next:** Reconcile the README, source behavior, and safe public product language before adding deeper examples or diagrams.
 
-#### Identity
+**Future:** Product direction is maintained separately and must not be read as a shipped feature list.
 
-<picture>
-  <source media="(prefers-reduced-motion: reduce)" srcset="https://raw.githubusercontent.com/M4G3LL4N0/seai-mind/main/.github-art/surfaces/hero-reduced.svg">
-  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/M4G3LL4N0/seai-mind/main/.github-art/surfaces/hero-light.svg">
-  <img alt="Identity diagram for seai-mind" src="https://raw.githubusercontent.com/M4G3LL4N0/seai-mind/main/.github-art/surfaces/hero-motion.svg">
-</picture>
+## Contributing and license
 
-#### Entry points
+Follow the repository's existing contribution and licensing files where present. This README does not invent an open-source license or contribution policy.
 
-<picture>
-  <source media="(prefers-reduced-motion: reduce)" srcset="https://raw.githubusercontent.com/M4G3LL4N0/seai-mind/main/.github-art/surfaces/terminal-reduced.svg">
-  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/M4G3LL4N0/seai-mind/main/.github-art/surfaces/terminal-light.svg">
-  <img alt="Entry points diagram for seai-mind" src="https://raw.githubusercontent.com/M4G3LL4N0/seai-mind/main/.github-art/surfaces/terminal-motion.svg">
-</picture>
+## Visual documentation
 
-#### Modules
+Image slots are intentionally comments until authentic screenshots, deterministic diagrams, or approved conceptual visuals exist. No absent image file is referenced.
 
-<picture>
-  <source media="(prefers-reduced-motion: reduce)" srcset="https://raw.githubusercontent.com/M4G3LL4N0/seai-mind/main/.github-art/surfaces/architecture-reduced.svg">
-  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/M4G3LL4N0/seai-mind/main/.github-art/surfaces/architecture-light.svg">
-  <img alt="Modules diagram for seai-mind" src="https://raw.githubusercontent.com/M4G3LL4N0/seai-mind/main/.github-art/surfaces/architecture-motion.svg">
-</picture>
+## NOAERTH
 
-#### Primitives
-
-<picture>
-  <source media="(prefers-reduced-motion: reduce)" srcset="https://raw.githubusercontent.com/M4G3LL4N0/seai-mind/main/.github-art/surfaces/state_machine-reduced.svg">
-  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/M4G3LL4N0/seai-mind/main/.github-art/surfaces/state_machine-light.svg">
-  <img alt="Primitives diagram for seai-mind" src="https://raw.githubusercontent.com/M4G3LL4N0/seai-mind/main/.github-art/surfaces/state_machine-motion.svg">
-</picture>
-
-#### Composition
-
-<picture>
-  <source media="(prefers-reduced-motion: reduce)" srcset="https://raw.githubusercontent.com/M4G3LL4N0/seai-mind/main/.github-art/surfaces/component_map-reduced.svg">
-  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/M4G3LL4N0/seai-mind/main/.github-art/surfaces/component_map-light.svg">
-  <img alt="Composition diagram for seai-mind" src="https://raw.githubusercontent.com/M4G3LL4N0/seai-mind/main/.github-art/surfaces/component_map-motion.svg">
-</picture>
-
-#### Build and tests
-
-<picture>
-  <source media="(prefers-reduced-motion: reduce)" srcset="https://raw.githubusercontent.com/M4G3LL4N0/seai-mind/main/.github-art/surfaces/build-reduced.svg">
-  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/M4G3LL4N0/seai-mind/main/.github-art/surfaces/build-light.svg">
-  <img alt="Build and tests diagram for seai-mind" src="https://raw.githubusercontent.com/M4G3LL4N0/seai-mind/main/.github-art/surfaces/build-motion.svg">
-</picture>
-
-#### Workflow
-
-<picture>
-  <source media="(prefers-reduced-motion: reduce)" srcset="https://raw.githubusercontent.com/M4G3LL4N0/seai-mind/main/.github-art/surfaces/workflow-reduced.svg">
-  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/M4G3LL4N0/seai-mind/main/.github-art/surfaces/workflow-light.svg">
-  <img alt="Workflow diagram for seai-mind" src="https://raw.githubusercontent.com/M4G3LL4N0/seai-mind/main/.github-art/surfaces/workflow-motion.svg">
-</picture>
-
-#### Domain
-
-<picture>
-  <source media="(prefers-reduced-motion: reduce)" srcset="https://raw.githubusercontent.com/M4G3LL4N0/seai-mind/main/.github-art/surfaces/domain-reduced.svg">
-  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/M4G3LL4N0/seai-mind/main/.github-art/surfaces/domain-light.svg">
-  <img alt="Domain diagram for seai-mind" src="https://raw.githubusercontent.com/M4G3LL4N0/seai-mind/main/.github-art/surfaces/domain-motion.svg">
-</picture>
-
-#### Identity object
-
-<picture>
-  <source media="(prefers-reduced-motion: reduce)" srcset="https://raw.githubusercontent.com/M4G3LL4N0/seai-mind/main/.github-art/surfaces/footer-reduced.svg">
-  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/M4G3LL4N0/seai-mind/main/.github-art/surfaces/footer-light.svg">
-  <img alt="Identity object diagram for seai-mind" src="https://raw.githubusercontent.com/M4G3LL4N0/seai-mind/main/.github-art/surfaces/footer-motion.svg">
-</picture>
-
-<!-- TRILLIONX:presentation:end -->
-
-<!-- TRILLIONX:evidence:begin -->
-
-## What is measurable here
-
-Generated by `.github-art` from the source tree at publish time.
-
-| Signal | Value |
-| --- | --- |
-| HTTP routes | 0 |
-| Entry points | 7 |
-| Module roots | 8 |
-| Test files | 12 |
-| CI workflows | 1 |
-| Distinctive stack | Zod |
-| Status | LIVE |
-| Evidence confidence | E3 |
-| Animated surfaces | 9 |
-
-<!-- TRILLIONX:evidence:end -->
+[NOAERTH](https://www.noaerth.com) is the venture ecosystem associated with this project.
