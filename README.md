@@ -1,101 +1,60 @@
-# seai-mind
+# SE-AI Mind
 
-> A small kernel for a mind that can be measured. Built in Zod. 7 entry points (index.ts). Live at seai-mind.vercel.app.
+> A measured AI kernel that can hold a candidate instead of promoting it.
 
-The implementation summary below is intentionally conservative. Claims from NORTHSTAR are not presented as shipped functionality.
+An open-source Darwin 0.1 AI kernel with inspectable schemas, provider-neutral runtimes, mind-scoped memory, skills/tools, genomes, evaluation, and explicit evolution gates.
 
-- [GitHub repository](https://github.com/M4G3LL4N0/seai-mind)
-- [Project site](https://seai-mind.vercel.app)
+[Research notes](docs/research) · [NOAERTH](https://www.noaerth.com)
 
-<!-- NOAERTH_IMAGE_SLOT: seai-mind/hero -->
+![SE-AI Mind observatory](assets/images/hero.svg)
 
-## What it is
+## The computational model
 
-A small kernel for a mind that can be measured. Built in Zod. 7 entry points (index.ts). Live at seai-mind.vercel.app.
+SE-AI Mind is a seven-unit pnpm workspace spanning core schemas and policy, provider-neutral runtime adapters, mind-scoped state, cognition/evolution, SDK, CLI, and web presentation. The cognition path is explicit: `task → memory/skill/tool → runtime → execute → verify → compare → hold/promote/rollback`. Arithmetic uses a parser rather than `eval`, records a deterministic verification result, and does not fabricate a model answer when no healthy runtime is available.
 
-This repository is part of the NOAERTH venture ecosystem. The current public-facing evidence identifies it as a early-stage project rather than a production-ready system.
+![SE-AI Mind evolution scoreboard](assets/images/evolution-scoreboard.svg)
 
-## Capabilities
+## Run the kernel
 
-### Available evidence
-
-- The repository contains the implementation and documentation associated with the project description above.
-- The technology signals currently visible in the local project are listed in the technical notes below.
-- No additional capability is asserted here without a direct implementation reference.
-
-### Experimental or planned
-
-Roadmap intent is deliberately not represented as shipped functionality. Review NORTHSTAR and source implementation together before adding future-facing claims.
-
-<!-- NOAERTH_IMAGE_SLOT: seai-mind/workflow -->
-
-## How it works
-
-The current evidence supports a repository-level application or tool workflow, but does not provide enough verified detail in the Part 1 record to publish a component-level architecture diagram. The architecture slot is reserved for a deterministic diagram after the source flow is reviewed.
-
-<!-- NOAERTH_IMAGE_SLOT: seai-mind/architecture -->
-
-## Quick start
-
-### Prerequisites
-
-- A runtime suitable for `Node.js`.
-- A clean checkout of this repository.
-
-### Install
-
-```sh
-pnpm install
+```bash
+`pnpm install`
+`pnpm verify`
+`pnpm doctor`
+`node packages/cli/dist/cli.js run "What is 2 + 2?"`
+`node packages/cli/dist/cli.js evolve verify --mind default`
 ```
 
-### Run locally
+Ollama discovery and generation are real adapter paths; the local adapter is mock behavior. Several CLI groups remain placeholders. The newer measured experiment path is materially implemented, while older generic evolution helpers are less complete.
 
-```sh
-Use the repository's documented entry point after installing dependencies.
-```
+## Architecture and evidence
 
-### Build
+Seven-unit pnpm workspace: core, runtime, state, mind, SDK, CLI, and web presentation
 
-```sh
-pnpm run build
-```
+![SE-AI Mind architecture](assets/images/architecture.svg)
 
-### Test
+| Recorded experiment evidence | Meaning |
+|---|---|
+| 146 tests documented in changelog (not rerun here) | Source-backed; see `v4/VERIFIED_METRICS.json` for definition and status. |
+| 0.43 baseline / 0.47 candidate documented in repeated-run experiment | Source-backed; see `v4/VERIFIED_METRICS.json` for definition and status. |
+| +16.7% token delta; gate result HOLD | Source-backed; see `v4/VERIFIED_METRICS.json` for definition and status. |
 
-```sh
-pnpm run test
-```
+The documented repeated-run candidate was held because the quality gain was small and token cost increased. That refusal is part of the product's technical story.
 
-Commands are included only when they were detected in the repository manifest; verify environment-specific requirements before deployment.
+## Boundaries
 
-## Technical notes
+- Local adapter is mock behavior and some CLI groups are placeholders.
+- No OS-level sandbox; experiments use storage-backed isolation.
+- Small samples and stochasticity limit generalization.
 
-- **Primary language:** JavaScript/TypeScript
-- **Runtime:** Node.js
-- **Package manager:** pnpm
-- **Framework and integration signals:** See the source tree and package manifests; no framework claim is made here without a direct implementation reference.
-- **Entry-point signals:** package.json
-- **Test evidence:** No test evidence recorded in the inventory
-- **Repository topics:** `typescript`, `benchmark`, `cli`, `live`, `next-js`, `packages`, `policy`, `react`
+## Source map
 
-## Status and roadmap
+- `packages/core/src/schemas.ts`
+- `packages/runtime/src/adapters/ollama.ts`
+- `packages/state/src/memory.ts`
+- `packages/mind/src/cognition.ts`
+- `packages/mind/src/experiment.ts`
+- `docs/research/TRUSTWORTHY_EVOLUTION_FIRST_EXPERIMENT.md`
 
-**Current status:** Early-stage project.
+## Status
 
-**Current:** The repository and its documented implementation are available for inspection.
-
-**Next:** Reconcile the README, source behavior, and safe public product language before adding deeper examples or diagrams.
-
-**Future:** Product direction is maintained separately and must not be read as a shipped feature list.
-
-## Contributing and license
-
-Follow the repository's existing contribution and licensing files where present. This README does not invent an open-source license or contribution policy.
-
-## Visual documentation
-
-Image slots are intentionally comments until authentic screenshots, deterministic diagrams, or approved conceptual visuals exist. No absent image file is referenced.
-
-## NOAERTH
-
-[NOAERTH](https://www.noaerth.com) is the venture ecosystem associated with this project.
+Research-stage open-source kernel / active development. Experiments are small and point-in-time; they are evidence of the evaluation path, not proof of general intelligence or production readiness.
