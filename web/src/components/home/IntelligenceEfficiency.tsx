@@ -23,7 +23,7 @@ export function IntelligenceEfficiency() {
             Measuring What Matters
           </h2>
           <p className="text-lg text-slate-600 dark:text-slate-300 leading-relaxed">
-            Not benchmark scores. Real efficiency: verified useful outcomes per unit of resources consumed.
+            The aim is more verified useful work per unit of resource. Current public experiments measure a narrow task suite; they do not yet establish broad efficiency gains.
           </p>
         </motion.div>
 
@@ -61,8 +61,8 @@ export function IntelligenceEfficiency() {
             MindBench Metric Categories
           </h3>
           <p className="text-slate-600 dark:text-slate-400 text-center max-w-2xl mx-auto mb-10">
-            CURRENT VERIFIED SNAPSHOT — the metric families MindBench captures where available.
-            Numbers shown only where measured; categories are filled in as suites are built out.
+            CURRENT IMPLEMENTATION SNAPSHOT — the metric families MindBench captures where available.
+              Historical experiment records are small and model-specific. Numbers appear only where those records measured them.
           </p>
 
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 max-w-6xl mx-auto">

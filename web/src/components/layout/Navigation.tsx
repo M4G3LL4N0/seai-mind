@@ -40,7 +40,7 @@ export function Navigation() {
           <Link href="/" className="flex shrink-0 items-center gap-2" aria-label="SE-AI Home">
             <span className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">SE-AI</span>
             <span className="hidden sm:inline-block px-2 py-0.5 text-xs font-medium bg-darwin-100 text-darwin-700 dark:bg-darwin-900/50 dark:text-darwin-300 rounded-full">
-              Darwin 0.1
+              Open intelligence
             </span>
           </Link>
 

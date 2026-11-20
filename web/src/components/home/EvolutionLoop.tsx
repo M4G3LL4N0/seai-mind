@@ -23,12 +23,12 @@ export function EvolutionLoop() {
           <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-darwin-100 text-darwin-700 dark:bg-darwin-900/50 dark:text-darwin-300 text-sm font-medium mb-4">
             Governed Evolution
           </span>
-          <h2 className="text-4xl md:text-5xl font-bold text-slate-950 dark:text-white mb-4">
-            The Evolution Loop
+            <h2 className="text-4xl md:text-5xl font-bold text-slate-950 dark:text-white mb-4">
+            A new engine for intelligence
           </h2>
           <p className="text-lg text-slate-600 dark:text-slate-300 leading-relaxed">
-            Experience becomes evidence, evidence becomes a candidate, and a candidate only ships when the gate can
-            tell signal from noise. Every step is measurable and reversible.
+            Experience becomes evidence. A candidate is compared against explicit criteria, then held, rejected, or
+            made eligible for a separate human decision. Every measured change can be inspected and rolled back.
           </p>
         </motion.div>
 
@@ -71,10 +71,10 @@ export function EvolutionLoop() {
           className="mt-16 grid grid-cols-1 lg:grid-cols-3 gap-6"
         >
           <div className="lg:col-span-2 rounded-3xl border border-slate-200 bg-white p-8 dark:border-slate-800 dark:bg-slate-900">
-            <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-4">The Gate Is a Decision Table, Not a Vibe</h3>
+            <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-4">Evidence before eligibility</h3>
             <p className="mb-6 text-slate-600 dark:text-slate-400 leading-relaxed">
-              Every candidate passes through explicit checks that return eligible / hold / reject. These are the checks
-              implemented in the kernel:
+              The implemented gate evaluates recorded experiment evidence and returns eligible, hold, or reject. Eligibility
+              is not automatic deployment; promotion remains an explicit action:
             </p>
             <div className="flex flex-wrap gap-2">
               {gateChecks.map((check) => (
@@ -96,10 +96,10 @@ export function EvolutionLoop() {
           </div>
 
           <div className="rounded-3xl bg-slate-950 p-8 text-white dark:bg-slate-950">
-            <h3 className="text-xl font-bold mb-4">Safety First, Evolution Second</h3>
+            <h3 className="text-xl font-bold mb-4">People retain the decision</h3>
             <p className="mb-6 text-slate-300 leading-relaxed">
-              No candidate reaches production on noise. Promotion is explicit, evidence is hash-signed, and rollback is
-              always available. The gate has already refused a real noise-level gain — that refusal is the point.
+              One recorded repeated-run experiment returned HOLD: its measured quality gain fell below the configured
+              threshold and token use exceeded its budget. It demonstrates a refusal path, not broad proof of safety or performance.
             </p>
             <ul className="space-y-3 text-sm text-slate-300">
               <li className="flex items-center gap-2">

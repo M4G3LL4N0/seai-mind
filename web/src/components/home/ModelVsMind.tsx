@@ -64,7 +64,7 @@ export function ModelVsMind() {
             Model <span className="text-seai-600 dark:text-seai-400">≠</span> Mind
           </h2>
           <p className="text-lg text-slate-600 dark:text-slate-300 leading-relaxed">
-            A model predicts. A Mind persists. The distinction is fundamental.
+            A model generates outputs. A Mind adds persistent state, capabilities, and policies around a model—and makes changes inspectable.
           </p>
         </motion.div>
 

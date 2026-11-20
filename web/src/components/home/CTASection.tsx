@@ -16,9 +16,9 @@ interface CTASectionProps {
 }
 
 export function CTASection({
-  title = "Ready to Build Your First Mind?",
-  description = "Clone the repository, run the doctor, and start evolving intelligence today.",
-  primaryAction = { label: "Get Started", href: "/docs/getting-started", icon: ArrowRight },
+  title = "The next era of AI is built, governed, and shared.",
+  description = "SE-AI is advancing a new foundation for persistent, purpose-built intelligence—open to builders and accountable to the people it serves.",
+  primaryAction = { label: "Explore the kernel", href: "/architecture", icon: ArrowRight },
   secondaryActions = [
     { label: "View on GitHub", href: site.github, icon: Github, variant: "outline" },
     { label: "Read the Docs", href: "/docs", icon: BookOpen, variant: "ghost" },
@@ -91,9 +91,9 @@ export function CTASection({
             className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl mx-auto"
           >
             {[
-              { icon: Terminal, label: "One Command", desc: "seai init → seai run" },
-              { icon: Brain, label: "Local First", desc: "Runs on your hardware" },
-              { icon: Zap, label: "Evolves", desc: "Improves through experience" },
+              { icon: Terminal, label: "Open-source", desc: "Inspect the seven-unit kernel" },
+              { icon: Brain, label: "Human governed", desc: "Evaluation before promotion" },
+              { icon: Zap, label: "Evidence led", desc: "Limits shown alongside results" },
             ].map((item, i) => (
               <motion.div
                 key={item.label}

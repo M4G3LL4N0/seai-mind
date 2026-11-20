@@ -19,14 +19,13 @@ export function LiveEvolutionPreview() {
           className="max-w-3xl mx-auto text-center mb-16"
         >
           <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-darwin-100 text-darwin-700 dark:bg-darwin-900/50 dark:text-darwin-300 text-sm font-medium mb-4">
-            Live Evolution
+            Recorded Experiments
           </span>
           <h2 className="text-4xl md:text-5xl font-bold text-slate-950 dark:text-white mb-4">
-            Two Real Experiments, Measured End to End
+            What the current evidence shows
           </h2>
           <p className="text-lg text-slate-600 dark:text-slate-300 leading-relaxed">
-            Not demos — recorded experiments with deterministic criteria, hash-signed evidence, and limitations stated
-            out loud.
+            Two historical, small-sample experiments with deterministic criteria and recorded evidence. They show a working evaluation path, not general performance or community impact.
           </p>
         </motion.div>
 
@@ -79,7 +78,7 @@ export function LiveEvolutionPreview() {
                   href={`/benchmarks/${exp.slug}`}
                   className="inline-flex items-center gap-1.5 text-sm font-semibold text-seai-600 hover:text-seai-700 dark:text-seai-400 dark:hover:text-seai-300"
                 >
-                  Full results <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                Experiment record <ArrowRight className="h-4 w-4" aria-hidden="true" />
                 </Link>
               </div>
             </motion.div>

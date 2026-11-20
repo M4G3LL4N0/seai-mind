@@ -4,11 +4,11 @@ import type { Metadata, Viewport } from "next";
 
 export const metadata: Metadata = {
   title: {
-    default: "SE-AI Mind — Self-Evolving Artificial Intelligence",
+    default: "SE-AI Mind — Self-Evolving AI, Built for Everyone.",
     template: "%s | SE-AI Mind",
   },
   description:
-    "Open platform for building persistent, measurable, governed, self-evolving AI Minds. A Mind is Model + Memory + Skills + Tools + Identity + Goals + Experience + Evaluation + Evolution + Governance.",
+    "Open-source infrastructure for persistent AI Minds that learn through measurable, human-governed experiments. Built around explicit evaluation, user control, and reversible change.",
   keywords: [
     "self-evolving AI",
     "self evolving artificial intelligence",
@@ -30,29 +30,27 @@ export const metadata: Metadata = {
     address: false,
     telephone: false,
   },
-  metadataBase: new URL("https://seai.dev"),
+  metadataBase: new URL("https://seai-mind.noaerth.com"),
   openGraph: {
     type: "website",
     locale: "en_US",
-    url: "https://seai.dev",
-    title: "SE-AI — Self-Evolving Artificial Intelligence",
-    description:
-      "Open platform for building persistent AI Minds that improve through governed experience. Intelligence should be optimized, not merely scaled.",
-    siteName: "SE-AI",
+    url: "https://seai-mind.noaerth.com",
+    title: "SE-AI Mind — Self-Evolving AI, Built for Everyone.",
+    description: "Open-source infrastructure for persistent AI Minds with measurable, human-governed evolution.",
+    siteName: "SE-AI Mind",
     images: [
       {
         url: "/og-image.png",
         width: 1200,
         height: 630,
-        alt: "SE-AI - Self-Evolving Artificial Intelligence",
+          alt: "SE-AI Mind — Open intelligence, human governance",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "SE-AI — Self-Evolving Artificial Intelligence",
-    description:
-      "Open platform for building persistent AI Minds that improve through governed experience.",
+    title: "SE-AI Mind — Self-Evolving AI, Built for Everyone.",
+    description: "Open-source infrastructure for persistent AI Minds with measurable, human-governed evolution.",
     images: ["/og-image.png"],
   },
   robots: {
@@ -76,8 +74,8 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
-    { media: "(prefers-color-scheme: dark)", color: "#0f172a" },
+    { media: "(prefers-color-scheme: light)", color: "#f5f7fb" },
+    { media: "(prefers-color-scheme: dark)", color: "#090d1c" },
   ],
   width: "device-width",
   initialScale: 1,

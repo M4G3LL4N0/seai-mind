@@ -12,7 +12,7 @@ import { Footer } from "@/components/layout/Footer";
 export const metadata: Metadata = {
   title: "SE-AI — Self-Evolving Artificial Intelligence",
   description:
-    "Open platform for building persistent, measurable, governed, self-evolving AI Minds. A Mind is Model + Memory + Skills + Tools + Identity + Goals + Experience + Evaluation + Evolution + Governance.",
+    "Open-source infrastructure for persistent AI Minds that learn through measurable, human-governed experiments. Built around explicit evaluation, user control, and reversible change.",
 };
 
 export default function HomePage() {

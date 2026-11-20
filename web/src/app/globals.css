@@ -2,15 +2,37 @@
 @tailwind components;
 @tailwind utilities;
 
+:root { --ink: #090d1c; --panel: #151c34; --violet: #7770d4; --ice: #79cce8; --champagne: #e8c994; }
+
+.seai-hero { background: radial-gradient(ellipse at 72% 42%, rgba(92,83,192,.34), transparent 40%), radial-gradient(ellipse at 12% 4%, rgba(84,191,220,.18), transparent 34%), #090d1c; }
+.seai-grid { opacity: .22; background-image: linear-gradient(rgba(185,194,238,.12) 1px, transparent 1px), linear-gradient(90deg, rgba(185,194,238,.12) 1px, transparent 1px); background-size: 48px 48px; mask-image: linear-gradient(to bottom, black, transparent 92%); }
+.eyebrow { font-size: .75rem; font-weight: 700; letter-spacing: .16em; line-height: 1.5; text-transform: uppercase; }
+.action-primary, .action-glass { display: inline-flex; min-height: 48px; align-items: center; justify-content: center; gap: .65rem; border-radius: 999px; padding: .75rem 1.25rem; font-size: .92rem; font-weight: 650; transition: transform .2s ease, background .2s ease; }
+.action-primary { background: var(--ice); color: var(--ink); box-shadow: 0 8px 24px rgba(69,173,204,.22); }
+.action-primary:hover, .action-glass:hover { transform: translateY(-2px); }
+.action-glass { border: 1px solid rgba(255,255,255,.2); background: rgba(255,255,255,.07); color: white; backdrop-filter: blur(16px); }
+.spiral-panel { overflow: hidden; border: 1px solid rgba(216,220,255,.18); border-radius: 2rem; background: linear-gradient(145deg, rgba(28,35,66,.92), rgba(15,21,43,.88)); padding: clamp(1.15rem,3vw,2rem); box-shadow: 0 32px 100px rgba(0,0,0,.34), inset 0 1px rgba(255,255,255,.07); }
+.spiral-stage { position: relative; display: grid; min-height: 310px; place-items: center; overflow: hidden; margin: 1rem 0; }
+.spiral-orbit { position: absolute; aspect-ratio: 1.64; width: min(78%, 430px); border: 1px solid rgba(169,165,255,.5); border-radius: 50%; transform: rotate(-18deg); box-shadow: 0 0 32px rgba(119,112,212,.12), inset 0 0 32px rgba(119,112,212,.08); }
+.orbit-two { width: min(62%, 340px); transform: rotate(24deg); border-color: rgba(121,204,232,.58); }
+.orbit-three { width: min(46%, 250px); transform: rotate(-30deg); border-color: rgba(232,201,148,.65); }
+.spiral-core { z-index: 2; display: grid; width: 106px; height: 106px; align-content: center; justify-items: center; border: 1px solid rgba(255,255,255,.76); border-radius: 50%; background: radial-gradient(circle at 35% 28%,#e5e4ff,#a9a5ff 58%,#6f69c4); color: #12152b; box-shadow: 0 0 48px rgba(169,165,255,.42); font-size: .95rem; }
+.spiral-core strong { font-size: 1.2rem; }
+.spiral-node { position: absolute; z-index: 3; border: 1px solid rgba(255,255,255,.22); border-radius: 999px; background: rgba(20,29,55,.92); padding: .55rem .85rem; color: #f8fafc; font-size: .82rem; box-shadow: 0 8px 28px rgba(0,0,0,.25); backdrop-filter: blur(12px); }
+.node-top { top: 12%; left: 50%; transform: translateX(-50%); }.node-right { top: 48%; right: 2%; }.node-bottom { bottom: 10%; left: 50%; transform: translateX(-50%); }.node-left { top: 48%; left: 2%; }
+.glass-card { border: 1px solid rgba(255,255,255,.13); border-radius: 1rem; background: rgba(255,255,255,.055); backdrop-filter: blur(12px); }
+.dark body { background: #090d1c; }
+@media (prefers-reduced-motion: reduce) { .action-primary, .action-glass { transition: none; } html { scroll-behavior: auto; } }
+
 @layer base {
   :root {
-    --background: 248 250 252;
-    --foreground: 30 41 59;
+    --background: 245 247 251;
+    --foreground: 19 26 48;
     --muted: 241 245 249;
     --muted-foreground: 100 116 139;
     --border: 226 232 240;
-    --ring: 90 141 176;
-    --primary: 90 141 176;
+    --ring: 109 101 210;
+    --primary: 91 82 190;
     --primary-foreground: 255 255 255;
     --secondary: 241 245 249;
     --secondary-foreground: 30 41 59;
@@ -21,7 +43,7 @@
   }
 
   .dark {
-    --background: 15 23 42;
+    --background: 9 13 28;
     --foreground: 248 250 252;
     --muted: 30 41 59;
     --muted-foreground: 148 163 184;
