@@ -70,9 +70,6 @@ export function Navigation() {
                   Self Evolving-AI
                 </span>
               </span>
-              <span className="hidden 2xl:inline-block rounded-full border border-seai-200 bg-seai-50 px-2.5 py-1 text-[10px] font-semibold tracking-wide text-seai-800 dark:border-seai-800 dark:bg-seai-900/50 dark:text-seai-200">
-                7 KERNEL UNITS · 1 REFERENCE MIND
-              </span>
             </Link>
 
             <div className="hidden lg:flex items-center gap-1">
