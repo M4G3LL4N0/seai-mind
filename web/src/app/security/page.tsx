@@ -7,7 +7,8 @@ import type { DocSection } from "@/lib/content";
 
 export const metadata: Metadata = {
   title: "Security",
-  description: "SE-AI security design: capability-based permissions, sandboxed evolution, threat detection, and audit logging.",
+  description:
+    "SE-AI security design: capability-based permissions, sandboxed evolution, threat detection, and audit logging.",
 };
 
 const sections: DocSection[] = [
@@ -47,8 +48,12 @@ export default function SecurityPage() {
   return (
     <>
       <Navigation />
-      <main>
-        <PageHeader eyebrow="Legal" title="Security" lede="Capability-based permissions, sandboxed evolution, audit trails." />
+      <main id="main-content">
+        <PageHeader
+          eyebrow="Legal"
+          title="Security"
+          lede="Capability-based permissions, sandboxed evolution, audit trails."
+        />
         <div className="container-wide py-16 lg:py-20">
           <div className="max-w-3xl mx-auto space-y-10">
             {sections.map((section, i) => (

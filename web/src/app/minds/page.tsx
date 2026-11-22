@@ -17,7 +17,7 @@ export default function MindsPage() {
   return (
     <>
       <Navigation />
-      <main>
+      <main id="main-content">
         <PageHeader
           eyebrow="Minds"
           title="A Mind Is a System, Not a Call"
@@ -26,7 +26,9 @@ export default function MindsPage() {
         <div className="container-wide py-16 lg:py-20">
           <div className="max-w-5xl mx-auto space-y-16">
             <section>
-              <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-6">The reference Mind</h2>
+              <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-6">
+                The reference Mind
+              </h2>
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {real.map((m) => (
                   <CardLink
@@ -40,9 +42,12 @@ export default function MindsPage() {
             </section>
 
             <section>
-              <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Future Minds</h2>
+              <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">
+                Future Minds
+              </h2>
               <p className="mb-6 text-slate-600 dark:text-slate-400">
-                Illustrative examples of what specialized Minds could become. They are marked FUTURE — designed, not built.
+                Illustrative examples of what specialized Minds could become.
+                They are marked FUTURE — designed, not built.
               </p>
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {future.map((m) => (

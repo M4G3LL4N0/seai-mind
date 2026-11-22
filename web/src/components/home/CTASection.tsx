@@ -1,7 +1,16 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { ArrowRight, Github, BookOpen, Terminal, Brain, Zap, ExternalLink, type LucideIcon } from "lucide-react";
+import {
+  ArrowRight,
+  Github,
+  BookOpen,
+  Terminal,
+  Brain,
+  Zap,
+  ExternalLink,
+  type LucideIcon,
+} from "lucide-react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { Button } from "@/components/ui/Button";
@@ -11,18 +20,37 @@ interface CTASectionProps {
   title?: string;
   description?: string;
   primaryAction?: { label: string; href: string; icon?: LucideIcon };
-  secondaryActions?: Array<{ label: string; href: string; icon?: LucideIcon; variant?: "secondary" | "outline" | "ghost" }>;
+  secondaryActions?: Array<{
+    label: string;
+    href: string;
+    icon?: LucideIcon;
+    variant?: "secondary" | "outline" | "ghost";
+  }>;
   className?: string;
 }
 
 export function CTASection({
   title = "The next era of AI is built, governed, and shared.",
   description = "SE-AI is advancing a new foundation for persistent, purpose-built intelligence—open to builders and accountable to the people it serves.",
-  primaryAction = { label: "Explore the kernel", href: "/architecture", icon: ArrowRight },
+  primaryAction = {
+    label: "Explore the kernel",
+    href: "/architecture",
+    icon: ArrowRight,
+  },
   secondaryActions = [
-    { label: "View on GitHub", href: site.github, icon: Github, variant: "outline" },
+    {
+      label: "View on GitHub",
+      href: site.github,
+      icon: Github,
+      variant: "outline",
+    },
     { label: "Read the Docs", href: "/docs", icon: BookOpen, variant: "ghost" },
-    { label: "Run Benchmarks", href: "/benchmarks", icon: Terminal, variant: "ghost" },
+    {
+      label: "Run Benchmarks",
+      href: "/benchmarks",
+      icon: Terminal,
+      variant: "ghost",
+    },
   ],
   className,
 }: CTASectionProps) {
@@ -34,9 +62,9 @@ export function CTASection({
       transition={{ duration: 0.6 }}
       className={cn("py-28 lg:py-36 relative overflow-hidden", className)}
     >
-      <div className="absolute inset-0 bg-gradient-to-br from-seai-600 via-darwin-500 to-seai-600" />
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-seai-600/20 via-transparent to-darwin-500/20" />
-      
+      <div className="closing-gradient absolute inset-0" />
+      <div className="closing-glow absolute inset-0" />
+
       <div className="container-wide relative">
         <div className="max-w-3xl mx-auto text-center">
           <motion.h2
@@ -47,7 +75,7 @@ export function CTASection({
           >
             {title}
           </motion.h2>
-          
+
           <motion.p
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -63,22 +91,46 @@ export function CTASection({
             transition={{ duration: 0.5, delay: 0.2 }}
             className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-16"
           >
-            <Button size="xl" variant="secondary" asChild className="w-full sm:w-auto">
+            <Button
+              size="xl"
+              variant="secondary"
+              asChild
+              className="w-full sm:w-auto"
+            >
               <Link href={primaryAction.href}>
                 {primaryAction.label}
-                {primaryAction.icon && <primaryAction.icon className="h-5 w-5 ml-2" aria-hidden="true" />}
+                {primaryAction.icon && (
+                  <primaryAction.icon
+                    className="h-5 w-5 ml-2"
+                    aria-hidden="true"
+                  />
+                )}
               </Link>
             </Button>
             {secondaryActions.map((action, i) => (
-              <Button key={action.label} size="xl" variant={action.variant || "outline"} asChild className="w-full sm:w-auto">
+              <Button
+                key={action.label}
+                size="xl"
+                variant={action.variant || "outline"}
+                asChild
+                className="w-full sm:w-auto"
+              >
                 <Link
                   href={action.href}
                   target={action.href.startsWith("http") ? "_blank" : undefined}
-                  rel={action.href.startsWith("http") ? "noopener noreferrer" : undefined}
+                  rel={
+                    action.href.startsWith("http")
+                      ? "noopener noreferrer"
+                      : undefined
+                  }
                 >
                   {action.label}
-                  {action.icon && <action.icon className="h-5 w-5 ml-2" aria-hidden="true" />}
-                  {action.href.startsWith("http") && <ExternalLink className="h-4 w-4 ml-1" aria-hidden="true" />}
+                  {action.icon && (
+                    <action.icon className="h-5 w-5 ml-2" aria-hidden="true" />
+                  )}
+                  {action.href.startsWith("http") && (
+                    <ExternalLink className="h-4 w-4 ml-1" aria-hidden="true" />
+                  )}
                 </Link>
               </Button>
             ))}
@@ -91,9 +143,21 @@ export function CTASection({
             className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl mx-auto"
           >
             {[
-              { icon: Terminal, label: "Open-source", desc: "Inspect the seven-unit kernel" },
-              { icon: Brain, label: "Human governed", desc: "Evaluation before promotion" },
-              { icon: Zap, label: "Evidence led", desc: "Limits shown alongside results" },
+              {
+                icon: Terminal,
+                label: "Open-source",
+                desc: "Inspect the seven-unit kernel",
+              },
+              {
+                icon: Brain,
+                label: "Human governed",
+                desc: "Evaluation before promotion",
+              },
+              {
+                icon: Zap,
+                label: "Evidence led",
+                desc: "Limits shown alongside results",
+              },
             ].map((item, i) => (
               <motion.div
                 key={item.label}
@@ -103,7 +167,10 @@ export function CTASection({
                 className="flex items-center gap-3 p-4 rounded-2xl bg-white/10 hover:bg-white/20 transition-colors"
               >
                 <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center">
-                  <item.icon className="h-6 w-6 text-white" aria-hidden="true" />
+                  <item.icon
+                    className="h-6 w-6 text-white"
+                    aria-hidden="true"
+                  />
                 </div>
                 <div>
                   <div className="font-medium text-white">{item.label}</div>

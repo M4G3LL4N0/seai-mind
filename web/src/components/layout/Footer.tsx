@@ -8,13 +8,21 @@ export function Footer() {
       <div className="container-wide py-16">
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-x-8 gap-y-10">
           <div className="col-span-2 md:col-span-3 lg:col-span-2">
-            <Link href="/" className="flex items-center gap-2 mb-4" aria-label="SE-AI Home">
-              <span className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">SE-AI</span>
-              <span className="px-2 py-0.5 text-xs font-medium bg-darwin-100 text-darwin-700 dark:bg-darwin-900/50 dark:text-darwin-300 rounded-full">
+            <Link
+              href="/"
+              className="flex items-center gap-2 mb-4"
+              aria-label="SE-AI Home"
+            >
+              <span className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">
+                SE-AI
+              </span>
+              <span className="px-2 py-0.5 text-xs font-medium bg-seai-100 text-seai-700 dark:bg-seai-900/50 dark:text-seai-300 rounded-full">
                 {footerIntro.badge}
               </span>
             </Link>
-            <p className="text-sm text-slate-600 dark:text-slate-400 mb-6 max-w-sm leading-relaxed">{footerIntro.text}</p>
+            <p className="text-sm text-slate-600 dark:text-slate-400 mb-6 max-w-sm leading-relaxed">
+              {footerIntro.text}
+            </p>
             <a
               href={site.github}
               target="_blank"
@@ -29,7 +37,9 @@ export function Footer() {
 
           {footerGroups.map((group) => (
             <nav key={group.label} aria-label={group.label}>
-              <h3 className="font-semibold text-slate-900 dark:text-white mb-4">{group.label}</h3>
+              <h3 className="font-semibold text-slate-900 dark:text-white mb-4">
+                {group.label}
+              </h3>
               <ul className="space-y-3">
                 {group.links.map((link) => (
                   <li key={link.href + link.label}>
@@ -62,15 +72,36 @@ export function Footer() {
           <div className="flex flex-col md:flex-row items-center justify-between gap-4">
             <p className="text-sm text-slate-500 dark:text-slate-400">
               © {new Date().getFullYear()} SE-AI. Open source — see the{" "}
-              <Link href="/license" className="underline underline-offset-2 hover:text-seai-600 dark:hover:text-seai-400">
+              <Link
+                href="/license"
+                className="underline underline-offset-2 hover:text-seai-600 dark:hover:text-seai-400"
+              >
                 license page
               </Link>{" "}
               for the current status.
             </p>
-            <nav aria-label="Legal" className="flex flex-wrap items-center justify-center gap-6 text-sm text-slate-500 dark:text-slate-400">
-              <Link href="/privacy" className="hover:text-seai-600 dark:hover:text-seai-400">Privacy</Link>
-              <Link href="/security" className="hover:text-seai-600 dark:hover:text-seai-400">Security</Link>
-              <Link href="/roadmap" className="hover:text-seai-600 dark:hover:text-seai-400">Roadmap</Link>
+            <nav
+              aria-label="Legal"
+              className="flex flex-wrap items-center justify-center gap-6 text-sm text-slate-500 dark:text-slate-400"
+            >
+              <Link
+                href="/privacy"
+                className="hover:text-seai-600 dark:hover:text-seai-400"
+              >
+                Privacy
+              </Link>
+              <Link
+                href="/security"
+                className="hover:text-seai-600 dark:hover:text-seai-400"
+              >
+                Security
+              </Link>
+              <Link
+                href="/roadmap"
+                className="hover:text-seai-600 dark:hover:text-seai-400"
+              >
+                Roadmap
+              </Link>
             </nav>
           </div>
         </div>

@@ -7,7 +7,8 @@ import type { DocSection } from "@/lib/content";
 
 export const metadata: Metadata = {
   title: "License",
-  description: "The honest licensing status of the SE-AI repository — there is currently no LICENSE file.",
+  description:
+    "The honest licensing status of the SE-AI repository — there is currently no LICENSE file.",
 };
 
 const sections: DocSection[] = [
@@ -29,8 +30,12 @@ export default function LicensePage() {
   return (
     <>
       <Navigation />
-      <main>
-        <PageHeader eyebrow="Legal" title="License" lede="No LICENSE file exists yet — treated honestly as all-rights-reserved." />
+      <main id="main-content">
+        <PageHeader
+          eyebrow="Legal"
+          title="License"
+          lede="No LICENSE file exists yet — treated honestly as all-rights-reserved."
+        />
         <div className="container-wide py-16 lg:py-20">
           <div className="max-w-3xl mx-auto space-y-10">
             {sections.map((section, i) => (

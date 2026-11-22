@@ -3,7 +3,15 @@
 import { cn } from "@/lib/utils";
 import { forwardRef, type HTMLAttributes } from "react";
 
-type BadgeVariant = "default" | "primary" | "success" | "warning" | "destructive" | "info" | "darwin" | "outline";
+type BadgeVariant =
+  | "default"
+  | "primary"
+  | "success"
+  | "warning"
+  | "destructive"
+  | "info"
+  | "darwin"
+  | "outline";
 type BadgeSize = "sm" | "md" | "lg";
 
 interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
@@ -12,22 +20,24 @@ interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
 }
 
 export const Badge = forwardRef<HTMLSpanElement, BadgeProps>(
-  ({ className, variant = "default", size = "md", children, ...props }, ref) => {
+  (
+    { className, variant = "default", size = "md", children, ...props },
+    ref,
+  ) => {
     const variants = {
       default:
         "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
       primary:
         "bg-seai-100 text-seai-700 dark:bg-seai-900/50 dark:text-seai-300",
       success:
-        "bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300",
+        "bg-seai-100 text-seai-700 dark:bg-seai-900/50 dark:text-seai-300",
       warning:
-        "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300",
+        "bg-seai-100 text-seai-700 dark:bg-seai-900/50 dark:text-seai-300",
       destructive:
         "bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300",
-      info:
-        "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300",
+      info: "bg-seai-100 text-seai-700 dark:bg-seai-900/50 dark:text-seai-300",
       darwin:
-        "bg-darwin-100 text-darwin-700 dark:bg-darwin-900/50 dark:text-darwin-300",
+        "bg-seai-100 text-seai-700 dark:bg-seai-900/50 dark:text-seai-300",
       outline:
         "bg-transparent border border-slate-300 text-slate-700 dark:border-slate-600 dark:text-slate-300",
     };
@@ -61,7 +71,17 @@ export const StatusBadge = ({
   status,
   size = "md",
 }: {
-  status: "active" | "pending" | "running" | "completed" | "failed" | "paused" | "error" | "complete" | "in-progress" | "planned";
+  status:
+    | "active"
+    | "pending"
+    | "running"
+    | "completed"
+    | "failed"
+    | "paused"
+    | "error"
+    | "complete"
+    | "in-progress"
+    | "planned";
   size?: "sm" | "md" | "lg";
 }) => {
   const statusConfig = {
@@ -79,5 +99,9 @@ export const StatusBadge = ({
 
   const config = statusConfig[status];
 
-  return <Badge variant={config.variant} size={size}>{config.label}</Badge>;
+  return (
+    <Badge variant={config.variant} size={size}>
+      {config.label}
+    </Badge>
+  );
 };

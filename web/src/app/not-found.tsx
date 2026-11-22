@@ -12,13 +12,20 @@ export default function NotFound() {
   return (
     <>
       <Navigation />
-      <main className="min-h-[60vh] flex items-center justify-center py-28">
+      <main
+        id="main-content"
+        className="min-h-[60vh] flex items-center justify-center py-28"
+      >
         <div className="max-w-md mx-auto text-center">
-          <p className="text-sm font-semibold uppercase tracking-wider text-seai-600 dark:text-seai-400 mb-4">404</p>
-          <h1 className="text-3xl font-bold text-slate-900 dark:text-white mb-3">This page does not exist</h1>
+          <p className="text-sm font-semibold uppercase tracking-wider text-seai-600 dark:text-seai-400 mb-4">
+            404
+          </p>
+          <h1 className="text-3xl font-bold text-slate-900 dark:text-white mb-3">
+            This page does not exist
+          </h1>
           <p className="mb-8 leading-relaxed text-slate-600 dark:text-slate-400">
-            We do not leave dead links lying around. If you got here from somewhere, that is a bug — start from the
-            home page instead.
+            We do not leave dead links lying around. If you got here from
+            somewhere, that is a bug — start from the home page instead.
           </p>
           <Link
             href="/"

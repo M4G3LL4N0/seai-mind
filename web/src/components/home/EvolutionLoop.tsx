@@ -20,15 +20,17 @@ export function EvolutionLoop() {
           transition={{ duration: 0.6 }}
           className="max-w-3xl mx-auto text-center mb-16"
         >
-          <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-darwin-100 text-darwin-700 dark:bg-darwin-900/50 dark:text-darwin-300 text-sm font-medium mb-4">
+          <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-seai-100 text-seai-700 dark:bg-seai-900/50 dark:text-seai-300 text-sm font-medium mb-4">
             Governed Evolution
           </span>
-            <h2 className="text-4xl md:text-5xl font-bold text-slate-950 dark:text-white mb-4">
+          <h2 className="text-4xl md:text-5xl font-bold text-slate-950 dark:text-white mb-4">
             A new engine for intelligence
           </h2>
           <p className="text-lg text-slate-600 dark:text-slate-300 leading-relaxed">
-            Experience becomes evidence. A candidate is compared against explicit criteria, then held, rejected, or
-            made eligible for a separate human decision. Every measured change can be inspected and rolled back.
+            Experience becomes evidence. A candidate is compared against
+            explicit criteria, then held, rejected, or made eligible for a
+            separate human decision. Every measured change can be inspected and
+            rolled back.
           </p>
         </motion.div>
 
@@ -57,8 +59,12 @@ export function EvolutionLoop() {
               >
                 {String(i + 1).padStart(2, "0")}
               </span>
-              <h3 className="font-semibold text-slate-900 dark:text-white">{step.title}</h3>
-              <p className="mt-1.5 text-sm leading-relaxed text-slate-600 dark:text-slate-400">{step.description}</p>
+              <h3 className="font-semibold text-slate-900 dark:text-white">
+                {step.title}
+              </h3>
+              <p className="mt-1.5 text-sm leading-relaxed text-slate-600 dark:text-slate-400">
+                {step.description}
+              </p>
             </motion.div>
           ))}
         </div>
@@ -71,10 +77,13 @@ export function EvolutionLoop() {
           className="mt-16 grid grid-cols-1 lg:grid-cols-3 gap-6"
         >
           <div className="lg:col-span-2 rounded-3xl border border-slate-200 bg-white p-8 dark:border-slate-800 dark:bg-slate-900">
-            <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-4">Evidence before eligibility</h3>
+            <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-4">
+              Evidence before eligibility
+            </h3>
             <p className="mb-6 text-slate-600 dark:text-slate-400 leading-relaxed">
-              The implemented gate evaluates recorded experiment evidence and returns eligible, hold, or reject. Eligibility
-              is not automatic deployment; promotion remains an explicit action:
+              The implemented gate evaluates recorded experiment evidence and
+              returns eligible, hold, or reject. Eligibility is not automatic
+              deployment; promotion remains an explicit action:
             </p>
             <div className="flex flex-wrap gap-2">
               {gateChecks.map((check) => (
@@ -85,10 +94,14 @@ export function EvolutionLoop() {
                     "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold",
                     check.severity === "reject"
                       ? "bg-red-50 text-red-700 ring-1 ring-red-200 dark:bg-red-900/30 dark:text-red-300 dark:ring-red-800"
-                      : "bg-amber-50 text-amber-700 ring-1 ring-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:ring-amber-800",
+                      : "bg-seai-50 text-seai-700 ring-1 ring-seai-200 dark:bg-seai-900/30 dark:text-seai-300 dark:ring-seai-800",
                   )}
                 >
-                  {check.severity === "reject" ? <Shield className="h-3 w-3" aria-hidden="true" /> : <RotateCcw className="h-3 w-3" aria-hidden="true" />}
+                  {check.severity === "reject" ? (
+                    <Shield className="h-3 w-3" aria-hidden="true" />
+                  ) : (
+                    <RotateCcw className="h-3 w-3" aria-hidden="true" />
+                  )}
                   {check.name}
                 </span>
               ))}
@@ -96,26 +109,45 @@ export function EvolutionLoop() {
           </div>
 
           <div className="rounded-3xl bg-slate-950 p-8 text-white dark:bg-slate-950">
-            <h3 className="text-xl font-bold mb-4">People retain the decision</h3>
+            <h3 className="text-xl font-bold mb-4">
+              People retain the decision
+            </h3>
             <p className="mb-6 text-slate-300 leading-relaxed">
-              One recorded repeated-run experiment returned HOLD: its measured quality gain fell below the configured
-              threshold and token use exceeded its budget. It demonstrates a refusal path, not broad proof of safety or performance.
+              One recorded repeated-run experiment returned HOLD: its measured
+              quality gain fell below the configured threshold and token use
+              exceeded its budget. It demonstrates a refusal path, not broad
+              proof of safety or performance.
             </p>
             <ul className="space-y-3 text-sm text-slate-300">
               <li className="flex items-center gap-2">
-                <Brain className="h-4 w-4 text-seai-400" aria-hidden="true" /> No LLM judge — deterministic criteria
+                <Brain className="h-4 w-4 text-seai-400" aria-hidden="true" />{" "}
+                No LLM judge — deterministic criteria
               </li>
               <li className="flex items-center gap-2">
-                <Shield className="h-4 w-4 text-seai-400" aria-hidden="true" /> Safety, privacy & cost reviews required
+                <Shield className="h-4 w-4 text-seai-400" aria-hidden="true" />{" "}
+                Safety, privacy & cost reviews required
               </li>
               <li className="flex items-center gap-2">
-                <UserCheck className="h-4 w-4 text-seai-400" aria-hidden="true" /> Promotion never automatic by default
+                <UserCheck
+                  className="h-4 w-4 text-seai-400"
+                  aria-hidden="true"
+                />{" "}
+                Promotion never automatic by default
               </li>
               <li className="flex items-center gap-2">
-                <RotateCcw className="h-4 w-4 text-seai-400" aria-hidden="true" /> Full rollback with lineage intact
+                <RotateCcw
+                  className="h-4 w-4 text-seai-400"
+                  aria-hidden="true"
+                />{" "}
+                Full rollback with lineage intact
               </li>
             </ul>
-            <Button variant="secondary" size="sm" asChild className="mt-6 w-full sm:w-auto">
+            <Button
+              variant="secondary"
+              size="sm"
+              asChild
+              className="mt-6 w-full sm:w-auto"
+            >
               <Link href="/evolution">
                 Read the evolution docs
                 <ArrowRight className="h-4 w-4 ml-1.5" aria-hidden="true" />

@@ -19,7 +19,7 @@ export default function HomePage() {
   return (
     <>
       <Navigation />
-      <main className="min-h-screen">
+      <main id="main-content" className="min-h-screen">
         <Hero />
         <ModelVsMind />
         <EvolutionLoop />

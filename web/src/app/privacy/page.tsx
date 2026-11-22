@@ -7,7 +7,8 @@ import type { DocSection } from "@/lib/content";
 
 export const metadata: Metadata = {
   title: "Privacy",
-  description: "SE-AI's privacy posture: default-deny data flows, local-first personal intelligence, and no provider credentials in client code.",
+  description:
+    "SE-AI's privacy posture: default-deny data flows, local-first personal intelligence, and no provider credentials in client code.",
 };
 
 const sections: DocSection[] = [
@@ -41,8 +42,12 @@ export default function PrivacyPage() {
   return (
     <>
       <Navigation />
-      <main>
-        <PageHeader eyebrow="Legal" title="Privacy" lede="Default-deny data flows and local-first personal intelligence." />
+      <main id="main-content">
+        <PageHeader
+          eyebrow="Legal"
+          title="Privacy"
+          lede="Default-deny data flows and local-first personal intelligence."
+        />
         <div className="container-wide py-16 lg:py-20">
           <div className="max-w-3xl mx-auto space-y-10">
             {sections.map((section, i) => (

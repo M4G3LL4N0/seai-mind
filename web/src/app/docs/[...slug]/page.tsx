@@ -34,8 +34,12 @@ export default function DocPage({ params }: Props) {
   return (
     <>
       <Navigation />
-      <main>
-        <PageHeader eyebrow="Documentation" title={doc.title} lede={doc.description} />
+      <main id="main-content">
+        <PageHeader
+          eyebrow="Documentation"
+          title={doc.title}
+          lede={doc.description}
+        />
         <div className="container-wide py-16 lg:py-20">
           <div className="max-w-3xl mx-auto space-y-10">
             <div className="space-y-10">
@@ -61,7 +65,12 @@ export default function DocPage({ params }: Props) {
                           className="inline-flex items-center gap-1.5 text-sm font-medium text-seai-600 hover:text-seai-700 dark:text-seai-400 dark:hover:text-seai-300"
                         >
                           {src.label}
-                          {external && <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />}
+                          {external && (
+                            <ExternalLink
+                              className="h-3.5 w-3.5"
+                              aria-hidden="true"
+                            />
+                          )}
                         </Link>
                       </li>
                     );

@@ -1,6 +1,7 @@
-import { Inter, Space_Grotesk, JetBrains_Mono } from "next/font/google";
+import { Inter, Lora, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import type { Metadata, Viewport } from "next";
+import { MotionConfig } from "framer-motion";
 
 export const metadata: Metadata = {
   title: {
@@ -36,21 +37,23 @@ export const metadata: Metadata = {
     locale: "en_US",
     url: "https://seai-mind.noaerth.com",
     title: "SE-AI Mind — Self-Evolving AI, Built for Everyone.",
-    description: "Open-source infrastructure for persistent AI Minds with measurable, human-governed evolution.",
+    description:
+      "Open-source infrastructure for persistent AI Minds with measurable, human-governed evolution.",
     siteName: "SE-AI Mind",
     images: [
       {
         url: "/og-image.png",
         width: 1200,
         height: 630,
-          alt: "SE-AI Mind — Open intelligence, human governance",
+        alt: "SE-AI Mind — Open intelligence, human governance",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
     title: "SE-AI Mind — Self-Evolving AI, Built for Everyone.",
-    description: "Open-source infrastructure for persistent AI Minds with measurable, human-governed evolution.",
+    description:
+      "Open-source infrastructure for persistent AI Minds with measurable, human-governed evolution.",
     images: ["/og-image.png"],
   },
   robots: {
@@ -74,8 +77,8 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f5f7fb" },
-    { media: "(prefers-color-scheme: dark)", color: "#090d1c" },
+    { media: "(prefers-color-scheme: light)", color: "#f7f8f4" },
+    { media: "(prefers-color-scheme: dark)", color: "#0c1911" },
   ],
   width: "device-width",
   initialScale: 1,
@@ -89,10 +92,10 @@ const inter = Inter({
   weight: ["300", "400", "500", "600", "700"],
 });
 
-const spaceGrotesk = Space_Grotesk({
+const lora = Lora({
   subsets: ["latin"],
   display: "swap",
-  variable: "--font-space-grotesk",
+  variable: "--font-lora",
   weight: ["400", "500", "600", "700"],
 });
 
@@ -109,13 +112,20 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`${inter.variable} ${spaceGrotesk.variable} ${jetbrainsMono.variable}`}>
+    <html
+      lang="en"
+      className={`${inter.variable} ${lora.variable} ${jetbrainsMono.variable}`}
+    >
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link
+          rel="preconnect"
+          href="https://fonts.gstatic.com"
+          crossOrigin="anonymous"
+        />
       </head>
       <body className="font-sans antialiased">
-        {children}
+        <MotionConfig reducedMotion="user">{children}</MotionConfig>
       </body>
     </html>
   );

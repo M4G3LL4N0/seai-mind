@@ -23,7 +23,9 @@ export function IntelligenceEfficiency() {
             Measuring What Matters
           </h2>
           <p className="text-lg text-slate-600 dark:text-slate-300 leading-relaxed">
-            The aim is more verified useful work per unit of resource. Current public experiments measure a narrow task suite; they do not yet establish broad efficiency gains.
+            The aim is more verified useful work per unit of resource. Current
+            public experiments measure a narrow task suite; they do not yet
+            establish broad efficiency gains.
           </p>
         </motion.div>
 
@@ -34,17 +36,27 @@ export function IntelligenceEfficiency() {
           transition={{ duration: 0.6, delay: 0.2 }}
           className="max-w-4xl mx-auto mb-16"
         >
-          <div className="bg-gradient-to-r from-seai-600 via-darwin-500 to-seai-600 rounded-3xl p-8 md:p-12 text-white">
+          <div className="metric-ratio-panel rounded-3xl p-8 md:p-12 text-white">
             <div className="max-w-3xl mx-auto">
               <div className="flex flex-col md:flex-row items-center justify-center gap-4 md:gap-8 mb-8">
                 <div className="flex-1 text-center p-6 bg-white/10 rounded-2xl">
-                  <div className="text-4xl md:text-5xl font-bold mb-2">Verified Useful Outcome</div>
-                  <div className="text-seai-100 text-sm uppercase tracking-wide">Numerator</div>
+                  <div className="text-4xl md:text-5xl font-bold mb-2">
+                    Verified Useful Outcome
+                  </div>
+                  <div className="text-seai-100 text-sm uppercase tracking-wide">
+                    Numerator
+                  </div>
                 </div>
-                <div className="flex items-center text-4xl font-bold text-seai-200">/</div>
+                <div className="flex items-center text-4xl font-bold text-seai-200">
+                  /
+                </div>
                 <div className="flex-1 text-center p-6 bg-white/10 rounded-2xl">
-                  <div className="text-3xl md:text-4xl font-bold mb-2">Compute + Latency + Cost + Memory + Energy</div>
-                  <div className="text-seai-100 text-sm uppercase tracking-wide">Denominator</div>
+                  <div className="text-3xl md:text-4xl font-bold mb-2">
+                    Compute + Latency + Cost + Memory + Energy
+                  </div>
+                  <div className="text-seai-100 text-sm uppercase tracking-wide">
+                    Denominator
+                  </div>
                 </div>
               </div>
             </div>
@@ -61,8 +73,10 @@ export function IntelligenceEfficiency() {
             MindBench Metric Categories
           </h3>
           <p className="text-slate-600 dark:text-slate-400 text-center max-w-2xl mx-auto mb-10">
-            CURRENT IMPLEMENTATION SNAPSHOT — the metric families MindBench captures where available.
-              Historical experiment records are small and model-specific. Numbers appear only where those records measured them.
+            CURRENT IMPLEMENTATION SNAPSHOT — the metric families MindBench
+            captures where available. Historical experiment records are small
+            and model-specific. Numbers appear only where those records measured
+            them.
           </p>
 
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 max-w-6xl mx-auto">
@@ -76,24 +90,28 @@ export function IntelligenceEfficiency() {
                 className={cn(
                   "p-4 rounded-2xl border",
                   metric.available
-                    ? "border-green-200 bg-green-50/60 dark:border-green-800 dark:bg-green-900/10"
+                    ? "border-seai-200 bg-seai-50/60 dark:border-seai-800 dark:bg-seai-900/10"
                     : "border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900",
                 )}
               >
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-semibold text-slate-900 dark:text-white">{metric.name}</span>
+                  <span className="text-sm font-semibold text-slate-900 dark:text-white">
+                    {metric.name}
+                  </span>
                   <span
                     className={cn(
                       "text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full",
                       metric.available
-                        ? "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300"
+                        ? "bg-seai-100 text-seai-700 dark:bg-seai-900/40 dark:text-seai-300"
                         : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400",
                     )}
                   >
                     {metric.available ? "measured" : "available soon"}
                   </span>
                 </div>
-                <p className="text-xs leading-relaxed text-slate-500 dark:text-slate-400">{metric.note}</p>
+                <p className="text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+                  {metric.note}
+                </p>
               </motion.div>
             ))}
           </div>
@@ -110,17 +128,20 @@ export function IntelligenceEfficiency() {
             {
               icon: TrendingUp,
               title: "Evidence-Based",
-              description: "Every experiment labeled: PLANNED · SIMULATED · EXPERIMENTAL · MEASURED · VERIFIED · PRODUCTION. No fabricated numbers.",
+              description:
+                "Every experiment labeled: PLANNED · SIMULATED · EXPERIMENTAL · MEASURED · VERIFIED · PRODUCTION. No fabricated numbers.",
             },
             {
               icon: Scale,
               title: "Hardware-Aware",
-              description: "Benchmarks include full hardware profile: CPU, GPU, RAM, thermal, battery. Results tied to actual capacity.",
+              description:
+                "Benchmarks include full hardware profile: CPU, GPU, RAM, thermal, battery. Results tied to actual capacity.",
             },
             {
               icon: Target,
               title: "Reproducible by Design",
-              description: "Fixed seeds, config snapshots, dependency hashes. Anyone can re-run and verify — that's what hash-signed records are for.",
+              description:
+                "Fixed seeds, config snapshots, dependency hashes. Anyone can re-run and verify — that's what hash-signed records are for.",
             },
           ].map((item, i) => (
             <motion.div
@@ -134,8 +155,12 @@ export function IntelligenceEfficiency() {
               <div className="w-12 h-12 rounded-xl bg-seai-100 text-seai-600 dark:bg-seai-900/50 dark:text-seai-400 flex items-center justify-center mb-4">
                 <item.icon className="h-6 w-6" aria-hidden="true" />
               </div>
-              <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-2">{item.title}</h3>
-              <p className="text-slate-600 dark:text-slate-400 leading-relaxed">{item.description}</p>
+              <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-2">
+                {item.title}
+              </h3>
+              <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
+                {item.description}
+              </p>
             </motion.div>
           ))}
         </motion.div>

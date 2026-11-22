@@ -34,25 +34,45 @@ export default function ResearchEntryPage({ params }: Props) {
   return (
     <>
       <Navigation />
-      <main>
-        <PageHeader eyebrow="Research" title={entry.title} lede={entry.summary} status={entry.status} />
+      <main id="main-content">
+        <PageHeader
+          eyebrow="Research"
+          title={entry.title}
+          lede={entry.summary}
+          status={entry.status}
+        />
         <div className="container-wide py-16 lg:py-20">
           <div className="max-w-3xl mx-auto space-y-10">
-            {entry.date && <p className="text-sm text-slate-500 dark:text-slate-400">{entry.date}</p>}
+            {entry.date && (
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                {entry.date}
+              </p>
+            )}
             <div className="space-y-10">
               {entry.paragraphs.map((p, i) => (
-                <p key={i} className="leading-relaxed text-slate-600 dark:text-slate-400">
+                <p
+                  key={i}
+                  className="leading-relaxed text-slate-600 dark:text-slate-400"
+                >
                   {p}
                 </p>
               ))}
             </div>
             {entry.bullets.length > 0 && (
               <section>
-                <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-4">Key facts</h2>
+                <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-4">
+                  Key facts
+                </h2>
                 <ul className="space-y-2">
                   {entry.bullets.map((b) => (
-                    <li key={b} className="flex gap-3 leading-relaxed text-slate-600 dark:text-slate-400">
-                      <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-seai-500" aria-hidden="true" />
+                    <li
+                      key={b}
+                      className="flex gap-3 leading-relaxed text-slate-600 dark:text-slate-400"
+                    >
+                      <span
+                        className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-seai-500"
+                        aria-hidden="true"
+                      />
                       {b}
                     </li>
                   ))}
@@ -76,7 +96,12 @@ export default function ResearchEntryPage({ params }: Props) {
                           className="inline-flex items-center gap-1.5 text-sm font-medium text-seai-600 hover:text-seai-700 dark:text-seai-400 dark:hover:text-seai-300"
                         >
                           {link.label}
-                          {external && <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />}
+                          {external && (
+                            <ExternalLink
+                              className="h-3.5 w-3.5"
+                              aria-hidden="true"
+                            />
+                          )}
                         </Link>
                       </li>
                     );
