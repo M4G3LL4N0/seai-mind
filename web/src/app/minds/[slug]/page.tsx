@@ -5,8 +5,8 @@ import { ArrowRight } from "lucide-react";
 import { Navigation } from "@/components/layout/Navigation";
 import { Footer } from "@/components/layout/Footer";
 import { PageHeader } from "@/components/ui/Page";
-import { StatusPill } from "@/components/ui/StatusPill";
 import { minds as allMinds, getMind } from "@/lib/content";
+import { PAIOSJourney } from "@/components/minds/PAIOSJourney";
 
 export function generateStaticParams() {
   return allMinds.map((mind) => ({ slug: mind.slug }));
@@ -51,6 +51,8 @@ export default function MindPage({ params }: Props) {
                 {mind.statusNote}
               </p>
             </section>
+
+            {mind.slug === "paios" && <PAIOSJourney />}
 
             <section>
               <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-4">

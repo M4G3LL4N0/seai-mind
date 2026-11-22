@@ -7,7 +7,7 @@ import { minds } from "@/lib/content";
 export const metadata: Metadata = {
   title: "Minds",
   description:
-    "What a Mind is and the gallery: PAIOS, the first real reference SE-AI Mind, plus honest FUTURE examples of what Minds can become.",
+    "PAIOS, the SE-AI reference application, alongside clearly labeled Mind concepts.",
 };
 
 export default function MindsPage() {
@@ -21,13 +21,13 @@ export default function MindsPage() {
         <PageHeader
           eyebrow="Minds"
           title="A Mind Is a System, Not a Call"
-          lede="Model + Memory + Skills + Tools + Identity + Goals + Experience + Evaluation + Evolution + Governance. One is real; the rest are honest directions, not claims."
+          lede="A Mind combines a model with persistent state, skills, tools, goals, and policy. PAIOS is the working reference application; the other profiles are concepts."
         />
         <div className="container-wide py-16 lg:py-20">
           <div className="max-w-5xl mx-auto space-y-16">
             <section>
               <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-6">
-                The reference Mind
+                PAIOS / reference application
               </h2>
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {real.map((m) => (
@@ -43,11 +43,10 @@ export default function MindsPage() {
 
             <section>
               <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">
-                Future Minds
+                Concepts in progress
               </h2>
               <p className="mb-6 text-slate-600 dark:text-slate-400">
-                Illustrative examples of what specialized Minds could become.
-                They are marked FUTURE — designed, not built.
+                These are design directions, not implemented applications. Each remains labeled FUTURE until there is a working Mind and evidence to show.
               </p>
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {future.map((m) => (
