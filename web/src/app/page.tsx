@@ -10,7 +10,7 @@ import { Navigation } from "@/components/layout/Navigation";
 import { Footer } from "@/components/layout/Footer";
 
 export const metadata: Metadata = {
-  title: "SE-AI — Self-Evolving Artificial Intelligence",
+  title: "Self Evolving-AI — AI that Evolves, Built for Everyone.",
   description:
     "Open-source infrastructure for persistent AI Minds that learn through measurable, human-governed experiments. Built around explicit evaluation, user control, and reversible change.",
 };

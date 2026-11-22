@@ -5,8 +5,8 @@ import { MotionConfig } from "framer-motion";
 
 export const metadata: Metadata = {
   title: {
-    default: "SE-AI Mind — Self-Evolving AI, Built for Everyone.",
-    template: "%s | SE-AI Mind",
+    default: "Self Evolving-AI — AI that Evolves, Built for Everyone.",
+    template: "%s | Self Evolving-AI",
   },
   description:
     "Open-source infrastructure for persistent AI Minds that learn through measurable, human-governed experiments. Built around explicit evaluation, user control, and reversible change.",
@@ -23,9 +23,9 @@ export const metadata: Metadata = {
     "AI evolution",
     "local AI",
   ],
-  authors: [{ name: "SE-AI" }],
-  creator: "SE-AI",
-  publisher: "SE-AI",
+  authors: [{ name: "Self Evolving-AI" }],
+  creator: "Self Evolving-AI",
+  publisher: "Self Evolving-AI",
   formatDetection: {
     email: false,
     address: false,
@@ -36,22 +36,22 @@ export const metadata: Metadata = {
     type: "website",
     locale: "en_US",
     url: "https://seai-mind.noaerth.com",
-    title: "SE-AI Mind — Self-Evolving AI, Built for Everyone.",
+    title: "Self Evolving-AI — AI that Evolves, Built for Everyone.",
     description:
       "Open-source infrastructure for persistent AI Minds with measurable, human-governed evolution.",
-    siteName: "SE-AI Mind",
+    siteName: "Self Evolving-AI",
     images: [
       {
         url: "/og-image.png",
         width: 1200,
         height: 630,
-        alt: "SE-AI Mind — Open intelligence, human governance",
+        alt: "Self Evolving-AI — AI that Evolves, Built for Everyone.",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "SE-AI Mind — Self-Evolving AI, Built for Everyone.",
+    title: "Self Evolving-AI — AI that Evolves, Built for Everyone.",
     description:
       "Open-source infrastructure for persistent AI Minds with measurable, human-governed evolution.",
     images: ["/og-image.png"],

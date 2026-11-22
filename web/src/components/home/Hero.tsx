@@ -26,10 +26,10 @@ export function Hero() {
         <div className="grid items-center gap-10 lg:grid-cols-[.88fr_1.12fr]">
           <div className="max-w-xl">
             <p className="eyebrow text-seai-200">
-              Open intelligence · human governance
+              SELF EVOLVING-AI · 7 KERNEL UNITS · 1 REFERENCE MIND
             </p>
-            <h1 className="mt-5 font-display text-5xl font-semibold leading-[1.02] tracking-tight text-white sm:text-6xl lg:text-7xl">
-              Self-Evolving AI,{" "}
+            <h1 className="mt-5 max-w-3xl font-display text-5xl font-semibold leading-[1.02] tracking-tight text-white sm:text-6xl lg:text-7xl">
+              AI that Evolves,{" "}
               <span className="text-[#b7d0bc]">Built for Everyone.</span>
             </h1>
             <p className="mt-6 max-w-lg text-lg leading-8 text-slate-200 sm:text-xl">

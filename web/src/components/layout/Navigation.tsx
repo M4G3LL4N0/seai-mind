@@ -59,17 +59,22 @@ export function Navigation() {
       </a>
       <header className="sticky top-0 z-50 w-full bg-white/80 dark:bg-slate-950/80 backdrop-blur-xl border-b border-slate-200 dark:border-slate-800">
         <nav className="container-wide" aria-label="Main navigation">
-          <div className="flex h-16 items-center justify-between gap-4">
+          <div className="flex min-h-[4.5rem] items-center justify-between gap-4">
             <Link
               href="/"
-              className="flex shrink-0 items-center gap-2"
-              aria-label="SE-AI Home"
+              className="flex min-w-0 shrink-0 items-center gap-2"
+              aria-label="Self Evolving-AI home"
             >
-              <span className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">
-                SE-AI
+              <span className="flex min-w-0 flex-col leading-tight">
+                <span className="text-base font-bold tracking-tight text-slate-900 dark:text-white sm:text-lg">
+                  Self Evolving-AI
+                </span>
+                <span className="hidden text-[11px] font-medium text-slate-600 dark:text-slate-300 sm:block">
+                  AI that Evolves, Built for Everyone.
+                </span>
               </span>
-              <span className="hidden sm:inline-block px-2 py-0.5 text-xs font-medium bg-seai-100 text-seai-700 dark:bg-seai-900/50 dark:text-seai-300 rounded-full">
-                Open intelligence
+              <span className="hidden 2xl:inline-block rounded-full border border-seai-200 bg-seai-50 px-2.5 py-1 text-[10px] font-semibold tracking-wide text-seai-800 dark:border-seai-800 dark:bg-seai-900/50 dark:text-seai-200">
+                7 KERNEL UNITS · 1 REFERENCE MIND
               </span>
             </Link>
 
