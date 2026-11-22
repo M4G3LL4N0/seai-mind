@@ -69,9 +69,6 @@ export function Navigation() {
                 <span className="text-base font-bold tracking-tight text-slate-900 dark:text-white sm:text-lg">
                   Self Evolving-AI
                 </span>
-                <span className="hidden text-[11px] font-medium text-slate-600 dark:text-slate-300 sm:block">
-                  AI that Evolves, Built for Everyone.
-                </span>
               </span>
               <span className="hidden 2xl:inline-block rounded-full border border-seai-200 bg-seai-50 px-2.5 py-1 text-[10px] font-semibold tracking-wide text-seai-800 dark:border-seai-800 dark:bg-seai-900/50 dark:text-seai-200">
                 7 KERNEL UNITS · 1 REFERENCE MIND

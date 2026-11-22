@@ -11,10 +11,10 @@ export function Footer() {
             <Link
               href="/"
               className="flex items-center gap-2 mb-4"
-              aria-label="SE-AI Home"
+              aria-label="Self Evolving-AI home"
             >
               <span className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">
-                SE-AI
+                {site.name}
               </span>
               <span className="px-2 py-0.5 text-xs font-medium bg-seai-100 text-seai-700 dark:bg-seai-900/50 dark:text-seai-300 rounded-full">
                 {footerIntro.badge}
