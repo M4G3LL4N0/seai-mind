@@ -103,7 +103,7 @@ export const experiments: BenchmarkExperiment[] = [
     date: "2026-09-13",
     kind: "complete",
     summary:
-      "First experiment with repeated independent runs (3 per task), per-task variance, and hash-signed evidence. Baseline 0.43 → candidate 0.47 at +16.7% tokens. The gate HOLD — it refused to promote a noise-level gain. That refusal is the result.",
+      "Three independent runs per task added variance estimates and hash-signed evidence. Quality moved from 0.43 to 0.47 while token use rose 16.7%; the gate kept the candidate on hold.",
     suite: "extraction-json-v1",
     model: "qwen2.5-coder:3b (Ollama)",
     runtime: "ollama — single healthy runtime",

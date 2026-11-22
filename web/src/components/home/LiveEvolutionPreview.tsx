@@ -89,7 +89,7 @@ export function LiveEvolutionPreview() {
                 <span>
                   {exp.gate === "eligible"
                     ? "An unseen probe fenced 3/3 under the promoted prompt — the improvement raised compliance, it did not guarantee it. Honesty included."
-                    : "The gate refused to promote a noise-level gain at higher token cost. That refusal is the result."}
+                    : "The measured gain fell below threshold and did not justify a 16.7% increase in token use, so the gate returned HOLD."}
                 </span>
               </div>
               <div className="mt-auto">
